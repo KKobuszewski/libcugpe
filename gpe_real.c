@@ -28,7 +28,11 @@
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <math.h>
-#include <complex>      // std::complex
+#include <complex.h>
+
+#ifndef DEV
+typedef cuDoubleComplex cuCplx;
+#endif
 
 /***************************************************************************/ 
 /**************************** GPE HEADERS **********************************/
@@ -81,8 +85,8 @@ int main( int argc , char ** argv )
     printf("# REAL TIME EVOLUTION\n");
     
     // CPU memory for wave function - pinned for fast transfers
-    Complex *psi; // Complex type defined in gpe_engine.h - structure with two doubles x and y for real and imaginary parts
-    err=cudaHostAlloc( &psi , sizeof(Complex)*nxyz, cudaHostAllocDefault );
+    cuCplx *psi; // Complex type defined in gpe_engine.h - structure with two doubles x and y for real and imaginary parts
+    err=cudaHostAlloc((void**) &psi , sizeof(cuCplx)*nxyz, cudaHostAllocDefault );
     if(err != cudaSuccess) 
     {
         printf("Error: Cannot allocate memory!\n");
@@ -97,7 +101,7 @@ int main( int argc , char ** argv )
 #else
     psiFile = fopen ("psi_orginal.bin", "rb");
 #endif
-    size_t readok = fread (psi , sizeof(Complex)*nxyz, 1, psiFile);
+    size_t readok = fread (psi , sizeof(cuCplx)*nxyz, 1, psiFile);
     if (readok != 1)
     {
         printf("Reading error\n");
@@ -148,7 +152,7 @@ int main( int argc , char ** argv )
         // Compute energy 
         gpe_exec( gpe_energy(&time, &ekin, &eint, &eext), ierr );
         
-        rt = e_t(); // get time
+        rt = e_t(0); // get time
         
         etot = ekin + eint + eext;
 
@@ -171,7 +175,7 @@ int main( int argc , char ** argv )
 #else
     psiFileOut = fopen ("psi_orginal.dat", "wb");
 #endif
-    fwrite (psi , sizeof(Complex)*nxyz, 1, psiFileOut);
+    fwrite (psi , sizeof(cuCplx)*nxyz, 1, psiFileOut);
     fclose (psiFileOut);
     
     

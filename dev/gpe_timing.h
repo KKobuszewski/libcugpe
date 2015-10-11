@@ -22,7 +22,7 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/ 
-
+#include <time.h>
 #include <sys/time.h>
 static double t_gettimeofday ;
 static clock_t t_clock , t_clock1 ;

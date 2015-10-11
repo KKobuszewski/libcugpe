@@ -32,16 +32,18 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <complex>      // std::complex
+#include <complex.h>      // not std::complex!
 #include <cuComplex.h>
 #include <cufft.h>
+
+#include "reductions.cuh"
 
 #ifndef __GPE_ENGINE__
 #define __GPE_ENGINE__
 
 typedef unsigned int uint;
-typedef cuDoubleComplex Complex;
-typedef std::complex<double> cplx;
+typedef cuDoubleComplex cuCplx;
+typedef double complex cplx; // test double _Complex
 
 // Macro allocates memory and check final status
 #define gpemalloc(pointer,size,type)                                            \
@@ -84,7 +86,7 @@ void gpe_get_lattice(int *_nx, int *_ny, int *_nz);
  * @param nthreads number of GPU threads. It has to be power of 2. Recommended 512 or 1024 [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
-int gpe_create_engine(double alpha, double beta, double dt, double npart , int nthreads=1024);
+int gpe_create_engine(double alpha, double beta, double dt, double npart , int nthreads = 1024);
 
 /**
  * Function changes values of GPE parameters
@@ -125,7 +127,7 @@ int gpe_set_quantum_friction_coeff(double qfcoeff);
  * @param psi corresponding wave function [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
-int gpe_set_psi(double t, Complex * psi);
+int gpe_set_psi(double t, cuCplx * psi);
 
 /**
  * Function returns wave function and corresponding time i.e. \f$\Psi(t)\f$
@@ -133,7 +135,7 @@ int gpe_set_psi(double t, Complex * psi);
  * @param psi corresponding wave function [OUTPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
-int gpe_get_psi(double *t, Complex * psi);
+int gpe_get_psi(double *t, cuCplx * psi);
 
 /**
  * Function returns density computed from wave function \f$n(\vec{r}, t)=\kappa |\Psi(\vec{r}, t)|^{2}\f$ and corresponding time.

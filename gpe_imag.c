@@ -28,7 +28,11 @@
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <math.h>
-#include <complex>      // std::complex
+#include <complex.h>
+
+#ifndef DEV
+typedef cuDoubleComplex cuCplx;
+#endif
 
 /***************************************************************************/ 
 /**************************** GPE HEADERS **********************************/
@@ -51,7 +55,7 @@ int main( int argc , char ** argv )
     int device=0;
     
     int ierr;
-    cudaError err;
+    cudaError_t err;
     
     err=cudaSetDevice( device );
     if(err != cudaSuccess) 
@@ -75,8 +79,8 @@ int main( int argc , char ** argv )
     printf("# IMAGINARY TIME PROJECTION\n");
     
     // CPU memory for wave function - pinned for fast transfers
-    Complex *psi; // Complex type defined in gpe_engine.h - structure with two doubles x and y for real and imaginary parts
-    err=cudaHostAlloc( &psi , sizeof(Complex)*nxyz, cudaHostAllocDefault );
+    cuCplx *psi; // Complex type defined in gpe_engine.h - structure with two doubles x and y for real and imaginary parts
+    err=cudaHostAlloc((void**) &psi , sizeof(cuCplx)*nxyz, cudaHostAllocDefault );
     if(err != cudaSuccess) 
     {
         printf("Error: Cannot allocate memory!\n");
@@ -130,7 +134,7 @@ int main( int argc , char ** argv )
         // Compute energy 
         gpe_exec( gpe_energy(&time, &ekin, &eint, &eext), ierr );
         
-        rt = e_t(); // get time
+        rt = e_t(0); // get time
         
         etot_prev=etot;
         etot = ekin + eint + eext;
@@ -154,7 +158,7 @@ int main( int argc , char ** argv )
 #else
     FILE *psiFile = fopen ("psi_orginal.bin", "wb");
 #endif
-    fwrite (psi , sizeof(Complex)*nxyz, 1, psiFile);
+    fwrite (psi , sizeof(cuCplx)*nxyz, 1, psiFile);
     fclose (psiFile);
     
     // Destroy engine
@@ -162,6 +166,8 @@ int main( int argc , char ** argv )
     
     // Clear memory
     cudaFreeHost(psi);
+    
+    printf("%15.15lf + %15.15lfj\n",creal(cexp(1+2*I)),cimag(cexp(1+2*I)));
     
     return 0;
 }

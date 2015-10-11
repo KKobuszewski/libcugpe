@@ -63,7 +63,7 @@ __constant__ double d_npart;
  * @param psi - psi(ix, iy, iz, it) - psi is normalized, i.e. int n(r) d^3r = npart, where n(r) computed according gpe_density(psi)
  * @return value of wave function after modification
  * */
-inline __device__  Complex gpe_modify_psi(uint ix, uint iy, uint iz, uint it, Complex psi)
+inline __device__  cuCplx gpe_modify_psi(uint ix, uint iy, uint iz, uint it, cuCplx psi)
 {
     return psi; // no change
 }

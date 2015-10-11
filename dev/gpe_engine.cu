@@ -23,9 +23,9 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/ 
 #include <math.h>
-#include <complex>      // std::complex
+#include <complex.h>      // not std::complex!
 
-#include "reductions.cuh"
+
 #include "gpe_engine.h"
 
 
@@ -39,13 +39,13 @@ typedef struct
     double *kky;
     double *kkz;
     cufftHandle plan; // cufft plan
-    Complex * d_wrk; // workspace for cufft - device
-    Complex * d_wrk2; // additional work space - device
-    Complex * d_psi; // wave function - device
-    Complex * d_psi2; // copy of wave function - device
+    cuCplx * d_wrk; // workspace for cufft - device
+    cuCplx * d_wrk2; // additional work space - device
+    cuCplx * d_psi; // wave function - device
+    cuCplx * d_psi2; // copy of wave function - device
     double * d_wrk2R; // d_wrk2R = (double *) d_wrk2; - for convinience
     double * d_wrk3R; // for quantum friction computation
-    Complex * d_wrk3C; // for quantum friction computation
+    cuCplx * d_wrk3C; // for quantum friction computation
     
     // other variables
     uint it; // number of steps performed from last call gpe_set_psi
@@ -71,10 +71,10 @@ __constant__ double d_qfcoeff; // quantum friction coeff
 __constant__ double d_kkx[NX];
 __constant__ double d_kky[NY];
 __constant__ double d_kkz[NZ];
-__constant__ Complex d_step_coeff; // 0.5*dt/(i*alpha-beta)
-__constant__ Complex d_exp_kkx2[NX]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kx^2 )
-__constant__ Complex d_exp_kky2[NY]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * ky^2 )
-__constant__ Complex d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kz^2 ) / nxyz
+__constant__ cuCplx d_step_coeff; // 0.5*dt/(i*alpha-beta)
+__constant__ cuCplx d_exp_kkx2[NX]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kx^2 )
+__constant__ cuCplx d_exp_kky2[NY]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * ky^2 )
+__constant__ cuCplx d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kz^2 ) / nxyz
 
 
 #define PARTICLES 1
@@ -104,28 +104,24 @@ __constant__ Complex d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(
     _iz=i-_iy * nz;
 
 #define constgpu(c) (double)(c)
-    
-#define myerrchecksimple(cmd,err)                                                                       \
+
+typedef int gpe_result_t;
+
+#define cuErrCheck(err)                                                                                 \
     {                                                                                                   \
-        err=cmd ;                                                                                       \
-        if(err != 0)                                                                                    \
-        {                                                                                               \
-            fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
-            return (int)(err);                                                                          \
-        }                                                                                               \
-    } 
-    
-#define myerrcheck(cmd)                                                                                 \
-    {                                                                                                   \
-        err=cmd ;                                                                                       \
         if(err != cudaSuccess)                                                                          \
         {                                                                                               \
             fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
             fprintf( stderr, "CUDA ERROR %d: %s\n", err, cudaGetErrorString((cudaError_t)(err)));       \
-            return (int)(err);                                                                          \
+            return (gpe_result_t)(err);                                                                          \
         }                                                                                               \
     } 
-    
+
+// TODO: Define all exit/error codes for gpe (including errors of CUFFT and CUBLAS)!
+#define GPE_SUCCES 0
+
+
+
 #define GPE_QF_EPSILON 1.0e-12
     
 
@@ -135,75 +131,75 @@ __constant__ Complex d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(
 ////////////////////////////////////////////////////////////////////////////////
 
 // Complex addition
-static __device__ __host__ inline Complex cplxAdd(Complex a, Complex b)
+static __device__ __host__ inline cuCplx cplxAdd(cuCplx a, cuCplx b)
 {
-    Complex c;
+    cuCplx c;
     c.x = a.x + b.x;
     c.y = a.y + b.y;
     return c;
 }
 
-static __device__ __host__ inline Complex cplxSub(Complex a, Complex b)
+static __device__ __host__ inline cuCplx cplxSub(cuCplx a, cuCplx b)
 {
-    Complex c;
+    cuCplx c;
     c.x = a.x - b.x;
     c.y = a.y - b.y;
     return c;
 }
 
 // Complex scale
-static __device__ __host__ inline Complex cplxScale(Complex a, double s)
+static __device__ __host__ inline cuCplx cplxScale(cuCplx a, double s)
 {
-    Complex c;
+    cuCplx c;
     c.x = s * a.x;
     c.y = s * a.y;
     return c;
 }
 
 // Complex scalei = multiplication  by purely imaginay number, i.e: c = a*(i*s)
-static __device__ __host__ inline Complex cplxScalei(Complex a, double s)
+static __device__ __host__ inline cuCplx cplxScalei(cuCplx a, double s)
 {
-    Complex c;
+    cuCplx c;
     c.x = s * a.y * constgpu(-1.0);
     c.y = s * a.x;
     return c;
 }
 
-static __device__ __host__ inline Complex cplxConj(Complex a)
+static __device__ __host__ inline cuCplx cplxConj(cuCplx a)
 {
     a.y=-1.0*a.y;
     return a;
 }
 
 // norm2=|a|^2
-static __device__ __host__ inline double cplxNorm2(Complex a)
+static __device__ __host__ inline double cplxNorm2(cuCplx a)
 {
     return (double)(a.x*a.x + a.y*a.y);
 }
 
 // abs=|a|
-static __device__ __host__ inline double cplxAbs(Complex a)
+static __device__ __host__ inline double cplxAbs(cuCplx a)
 {
     return (double)(sqrt(cplxNorm2(a)));
 }
 
-static __device__ __host__ inline double cplxArg(Complex a)
+static __device__ __host__ inline double cplxArg(cuCplx a)
 {
     return (double)(atan2(a.y,a.x));
 }
 
 
 // Complex multiplication
-static __device__ __host__ inline Complex cplxMul(Complex a, Complex b)
+static __device__ __host__ inline cuCplx cplxMul(cuCplx a, cuCplx b)
 {
-    Complex c;
+    cuCplx c;
     c.x = a.x * b.x - a.y * b.y;
     c.y = a.x * b.y + a.y * b.x;
     return c;
 }
 
 // Complex multiplication - and return only real part
-static __device__ __host__ inline double cplxMulR(Complex a, Complex b)
+static __device__ __host__ inline double cplxMulR(cuCplx a, cuCplx b)
 {
     double c;
     c = a.x * b.x - a.y * b.y;
@@ -211,25 +207,25 @@ static __device__ __host__ inline double cplxMulR(Complex a, Complex b)
 }
 
 // Complex multiplication - and return only imag part
-static __device__ __host__ inline double cplxMulI(Complex a, Complex b)
+static __device__ __host__ inline double cplxMulI(cuCplx a, cuCplx b)
 {
     double c;
     c = a.x * b.y + a.y * b.x;
     return c;
 }
 
-static __device__ __host__ inline Complex cplxDiv(Complex a, Complex b)
+static __device__ __host__ inline cuCplx cplxDiv(cuCplx a, cuCplx b)
 {
-    Complex c;
+    cuCplx c;
     double t=b.x*b.x + b.y*b.y;
     c.x = (a.x * b.x + a.y * b.y)/t;
     c.y = (a.y * b.x - a.x * b.y)/t;
     return c;
 }
 
-static __device__ __host__ inline Complex cplxSqrt(Complex z)
+static __device__ __host__ inline cuCplx cplxSqrt(cuCplx z)
 {
-    Complex r;
+    cuCplx r;
     double norm=sqrt(z.x*z.x + z.y*z.y);
 
     r.x=sqrt((norm+z.x)/2.);
@@ -238,9 +234,9 @@ static __device__ __host__ inline Complex cplxSqrt(Complex z)
     return r;
 }
 
-static __device__ __host__ inline Complex cplxLog(Complex z)
+static __device__ __host__ inline cuCplx cplxLog(cuCplx z)
 {
-    Complex r;
+    cuCplx r;
     double norm=z.x*z.x + z.y*z.y;
     double arg=atan2(z.y,z.x);
     r.x=constgpu(0.5)*log(norm);
@@ -249,19 +245,19 @@ static __device__ __host__ inline Complex cplxLog(Complex z)
 }
 
 // z=exp(i*x)=cos(x)+i*sin(x), x - real number
-static __device__ __host__ inline Complex cplxExpi(double x)
+static __device__ __host__ inline cuCplx cplxExpi(double x)
 {
-    Complex r;
+    cuCplx r;
     r.x=cos(x);
     r.y=sin(x);
     return r;
 }
 
 // z=exp(x), x - complex number
-static __device__ __host__ inline Complex cplxExp(Complex x)
+static __device__ __host__ inline cuCplx cplxExp(cuCplx x)
 {
     double t;
-    Complex r;
+    cuCplx r;
     t=exp(x.x);
     r.x=t*cos(x.y);
     r.y=t*sin(x.y);
@@ -269,9 +265,9 @@ static __device__ __host__ inline Complex cplxExp(Complex x)
 }
 
 // returns 1/c
-static __device__ __host__ inline Complex cplxInv(Complex c)
+static __device__ __host__ inline cuCplx cplxInv(cuCplx c)
 {
-    Complex r;
+    cuCplx r;
     double n=c.x*c.x + c.y*c.y;
     r.x=c.x/n;
     r.y=constgpu(-1.0)*c.y/n;
@@ -284,7 +280,7 @@ static __device__ __host__ inline Complex cplxInv(Complex c)
 /**
  * Function computes density from wave function psi
  * */
-inline __device__  double gpe_density(Complex psi)
+inline __device__  double gpe_density(cuCplx psi)
 {
     return GAMMA * (psi.x*psi.x + psi.y*psi.y); // |psi|^2 * GAMMA, where GAMMA=1 for particles, GAMMA=2 for dimers
 }
@@ -297,12 +293,166 @@ void gpe_get_lattice(int *_nx, int *_ny, int *_nz)
     *_nz = nz;
 }
 
-int gpe_create_engine(double alpha, double beta, double dt, double npart, int nthreads)
+inline gpe_result_t gpe_reciprocal_lattice_init( double alpha, double beta)
 {
-    cudaError err;
+    /* ***************************************************************************************
+     * TODO:
+     *      - ask if c3/(GAMMA*GAMMA) could not be change to simplier form (NOT IMPORTANT ...)
+     *      - think of adding OpenMP sections (probably not parallel for!)
+     */
+    
+    /* NOTE : nx , ny , nz = 2j forall j integers (e.g. even numbers for the lattice dimensions) */
+    // Initialize lattice in momentum space (first Brullion zone)
+    /* initialize the k-space lattice */
+    const double dt = gpe_mem.dt;
     uint ui;
     int i,j;
     double r;
+    
+    // Generate arrays on host
+    gpemalloc(gpe_mem.kkx,nx,double);
+    gpemalloc(gpe_mem.kky,ny,double);
+    gpemalloc(gpe_mem.kkz,nz,double);  
+    
+    for ( i = 0 ; i <= nx / 2 - 1 ; i++ ) {
+        gpe_mem.kkx[ i ] = 2. * ( double ) M_PI / nx * ( double ) i ;  }
+    j = - i ;
+    for ( i = nx / 2 ; i < nx ; i++ ) 
+    {
+        gpe_mem.kkx[ i ] = 2. * ( double ) M_PI / nx * ( double ) j ; 
+        j++ ;
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_kkx, gpe_mem.kkx, nx*sizeof(double)) ) ;
+
+    for ( i = 0 ; i <= ny / 2 - 1 ; i++ ) {
+        gpe_mem.kky[ i ] = 2. * ( double ) M_PI / ny * ( double ) i ;  }
+    j = - i ;
+    for ( i = ny / 2 ; i < ny ; i++ ) 
+    {
+        gpe_mem.kky[ i ] = 2. * ( double ) M_PI / ny * ( double ) j ; 
+        j++ ;
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_kky, gpe_mem.kky, ny*sizeof(double)) ) ;
+
+    for ( i = 0 ; i <= nz / 2 - 1 ; i++ ) {
+        gpe_mem.kkz[ i ] = 2. * ( double ) M_PI / nz * ( double ) i ;  }
+    j = - i ;
+    for ( i = nz / 2 ; i < nz ; i++ ) 
+    {
+        gpe_mem.kkz[ i ] = 2. * ( double ) M_PI / nz * ( double ) j ; 
+        j++ ;
+    }    
+    cuErrCheck( cudaMemcpyToSymbol(d_kkz, gpe_mem.kkz, nz*sizeof(double)) ) ;
+    
+    // 0.5*dt/(i*alpha-beta)*GAMMA
+    cplx c1=GAMMA*0.5*dt + I*0.0;
+    cplx c2=-1.0*beta + I*alpha;
+    cplx c3=c1/c2;
+    cuErrCheck( cudaMemcpyToSymbol(d_step_coeff, &c3, sizeof(cuCplx)) ) ;
+    
+    // kinetic operator mulipliers
+    cuCplx *carr;
+    
+    // nx direction
+    gpemalloc(carr,nx,cuCplx);
+    for(ui=0; ui<nx; ui++)
+    {
+        c1=cexp(c3*gpe_mem.kkx[ui]*gpe_mem.kkx[ui]/(GAMMA*GAMMA));
+        carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
+        //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_exp_kkx2, carr, nx*sizeof(cuCplx)) ) ;
+    free(carr);
+    
+    // ny direction
+    gpemalloc(carr,ny,cuCplx);
+    for(ui=0; ui<ny; ui++)
+    {
+        c1=cexp(c3*gpe_mem.kky[ui]*gpe_mem.kky[ui]/(GAMMA*GAMMA));
+        carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
+        //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_exp_kky2, carr, ny*sizeof(cuCplx)) ) ;
+    free(carr);
+    
+    // nz direction
+    gpemalloc(carr,nz,cuCplx);
+    for(ui=0; ui<nz; ui++)
+    {
+        c1=cexp(c3*gpe_mem.kkz[ui]*gpe_mem.kkz[ui]/(GAMMA*GAMMA)) / (double)(nxyz); // NOTE: here we divide to 
+        carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
+        //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_exp_kkz2_over_nxyz, carr, nz*sizeof(cuCplx)) ) ;
+    free(carr);
+    
+    return GPE_SUCCES;
+}
+
+inline gpe_result_t gpe_reciprocal_lattice_change( double alpha, double beta)
+{
+    /* ***************************************************************************************
+     * TODO:
+     *      - ask if c3/(GAMMA*GAMMA) could not be change to simplier form (NOT IMPORTANT ...)
+     *      - think of adding OpenMP sections (probably not parallel for!)
+     */
+    
+    double dt = gpe_mem.dt;
+    uint ui;
+    int i,j;
+    double r;
+    
+    // 0.5*dt/(i*alpha-beta)*GAMMA
+    cplx c1=GAMMA*0.5*dt + I*0.0;
+    cplx c2=-1.0*beta + I*alpha;
+    cplx c3=c1/c2;
+    cuErrCheck( cudaMemcpyToSymbol(d_step_coeff, &c3, sizeof(cuCplx)) ) ;
+    
+    // kinetic operator mulipliers
+    cuCplx *carr;
+    
+    // nx direction
+    gpemalloc(carr,nx,cuCplx);
+    for(ui=0; ui<nx; ui++)
+    {
+        c1=cexp(c3*gpe_mem.kkx[ui]*gpe_mem.kkx[ui]/(GAMMA*GAMMA));
+        carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
+        //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_exp_kkx2, carr, nx*sizeof(cuCplx)) ) ;
+    free(carr);
+    
+    // ny direction
+    gpemalloc(carr,ny,cuCplx);
+    for(ui=0; ui<ny; ui++)
+    {
+        c1=cexp(c3*gpe_mem.kky[ui]*gpe_mem.kky[ui]/(GAMMA*GAMMA));
+        carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
+        //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_exp_kky2, carr, ny*sizeof(cuCplx)) ) ;
+    free(carr);
+    
+    // nz direction
+    gpemalloc(carr,nz,cuCplx);
+    for(ui=0; ui<nz; ui++)
+    {
+        c1=cexp(c3*gpe_mem.kkz[ui]*gpe_mem.kkz[ui]/(GAMMA*GAMMA)) / (double)(nxyz); // NOTE: here we divide to 
+        carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
+        //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
+    }
+    cuErrCheck( cudaMemcpyToSymbol(d_exp_kkz2_over_nxyz, carr, nz*sizeof(cuCplx)) ) ;
+    free(carr);
+    
+    return GPE_SUCCES;
+}
+
+int gpe_create_engine(double alpha, double beta, double dt, double npart, int nthreads)
+{
+    uint ui;
+    int i,j;
+    double r;
+    gpe_result_t res;
     
     #ifndef GAMMA
         return -99; // not supported mode
@@ -316,123 +466,46 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
     
     // Fill const memory
     ui=nx;
-    myerrcheck( cudaMemcpyToSymbol(d_nx, &ui, sizeof(uint)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_nx, &ui, sizeof(uint)) ) ;
     ui=ny;
-    myerrcheck( cudaMemcpyToSymbol(d_ny, &ui, sizeof(uint)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_ny, &ui, sizeof(uint)) ) ;
     ui=nz;
-    myerrcheck( cudaMemcpyToSymbol(d_nz, &ui, sizeof(uint)) ) ;   
-    myerrcheck( cudaMemcpyToSymbol(d_alpha, &alpha, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_nz, &ui, sizeof(uint)) ) ;   
+    cuErrCheck( cudaMemcpyToSymbol(d_alpha, &alpha, sizeof(double)) ) ;
     gpe_mem.alpha=alpha;
-    myerrcheck( cudaMemcpyToSymbol(d_beta, &beta, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_beta, &beta, sizeof(double)) ) ;
     gpe_mem.beta=beta;
-    myerrcheck( cudaMemcpyToSymbol(d_dt, &dt, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_dt, &dt, sizeof(double)) ) ;
     gpe_mem.dt=dt;
     r=0.0;
-    myerrcheck( cudaMemcpyToSymbol(d_t0, &r, sizeof(double)) ) ;
-    myerrcheck( cudaMemcpyToSymbol(d_qfcoeff, &r, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_t0, &r, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_qfcoeff, &r, sizeof(double)) ) ;
     gpe_mem.t0=0.0;
     gpe_mem.it=0;
     gpe_mem.qfcoeff=0.0;
-    myerrcheck( cudaMemcpyToSymbol(d_npart, &npart, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_npart, &npart, sizeof(double)) ) ;
     gpe_mem.npart=npart;
     
-    // Generate arrays
-    gpemalloc(gpe_mem.kkx,nx,double);
-    gpemalloc(gpe_mem.kky,ny,double);
-    gpemalloc(gpe_mem.kkz,nz,double);  
+    // create reciprocal lattice (in bonduary of first Brullion zone)
+    res = gpe_reciprocal_lattice_init(alpha, beta);
     
-    /* NOTE : nx , ny , nz = 2j forall j integers (e.g. even numbers for the lattice dimensions) */
-    // Initialize lattice in momentum space (first Brullion zone)
-    /* initialize the k-space lattice */
-//     printf("CREATING LATTICE: %dx%dx%d...\n", nx,ny,nz);
     
-    for ( i = 0 ; i <= nx / 2 - 1 ; i++ ) {
-        gpe_mem.kkx[ i ] = 2. * ( double ) M_PI / nx * ( double ) i ;  }
-    j = - i ;
-    for ( i = nx / 2 ; i < nx ; i++ ) 
-    {
-        gpe_mem.kkx[ i ] = 2. * ( double ) M_PI / nx * ( double ) j ; 
-        j++ ;
-    }
-
-    for ( i = 0 ; i <= ny / 2 - 1 ; i++ ) {
-        gpe_mem.kky[ i ] = 2. * ( double ) M_PI / ny * ( double ) i ;  }
-    j = - i ;
-    for ( i = ny / 2 ; i < ny ; i++ ) 
-    {
-        gpe_mem.kky[ i ] = 2. * ( double ) M_PI / ny * ( double ) j ; 
-        j++ ;
-    }
-
-    for ( i = 0 ; i <= nz / 2 - 1 ; i++ ) {
-        gpe_mem.kkz[ i ] = 2. * ( double ) M_PI / nz * ( double ) i ;  }
-    j = - i ;
-    for ( i = nz / 2 ; i < nz ; i++ ) 
-    {
-        gpe_mem.kkz[ i ] = 2. * ( double ) M_PI / nz * ( double ) j ; 
-        j++ ;
-    }    
-    myerrcheck( cudaMemcpyToSymbol(d_kkx, gpe_mem.kkx, nx*sizeof(double)) ) ;
-    myerrcheck( cudaMemcpyToSymbol(d_kky, gpe_mem.kky, ny*sizeof(double)) ) ;
-    myerrcheck( cudaMemcpyToSymbol(d_kkz, gpe_mem.kkz, nz*sizeof(double)) ) ;
-        
-    // 0.5*dt/(i*alpha-beta)*GAMMA
-    cplx c1(GAMMA*0.5*dt,0.0);
-    cplx c2(-1.0*beta, alpha);
-    cplx c3=c1/c2;
-    Complex c4 = {c3.real(), c3.imag()};
-    myerrcheck( cudaMemcpyToSymbol(d_step_coeff, &c4, sizeof(Complex)) ) ;
     
-    // kinetic operator mulipliers
-    Complex *carr;
-    
-    // nx direction
-    gpemalloc(carr,nx,Complex);
-    for(ui=0; ui<nx; ui++)
-    {
-        c1=exp(c3*gpe_mem.kkx[ui]*gpe_mem.kkx[ui]/(GAMMA*GAMMA));
-        carr[ui].x=c1.real(); carr[ui].y=c1.imag();
-//         printf("%d %f %f\n", ui, carr[ui].x, carr[ui].y);
-    }
-    myerrcheck( cudaMemcpyToSymbol(d_exp_kkx2, carr, nx*sizeof(Complex)) ) ;
-    free(carr);
-    
-    // ny direction
-    gpemalloc(carr,ny,Complex);
-    for(ui=0; ui<ny; ui++)
-    {
-        c1=exp(c3*gpe_mem.kky[ui]*gpe_mem.kky[ui]/(GAMMA*GAMMA));
-        carr[ui].x=c1.real(); carr[ui].y=c1.imag();
-//         printf("%d %f %f\n", ui, carr[ui].x, carr[ui].y);
-    }
-    myerrcheck( cudaMemcpyToSymbol(d_exp_kky2, carr, ny*sizeof(Complex)) ) ;
-    free(carr);
-    
-    // nz direction
-    gpemalloc(carr,nz,Complex);
-    for(ui=0; ui<nz; ui++)
-    {
-        c1=exp(c3*gpe_mem.kkz[ui]*gpe_mem.kkz[ui]/(GAMMA*GAMMA)) / (double)(nxyz);
-        carr[ui].x=c1.real(); carr[ui].y=c1.imag();
-//         printf("%d %f %f\n", ui, carr[ui].x, carr[ui].y);
-    }
-    myerrcheck( cudaMemcpyToSymbol(d_exp_kkz2_over_nxyz, carr, nz*sizeof(Complex)) ) ;
-    free(carr);
-    
+    // TODO: Create separate function for this and probably create array of plans...
     // create cufft plans
     cufftResult cufft_result;
     cufft_result=cufftCreate(&gpe_mem.plan); if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
     cufft_result=cufftSetAutoAllocation(gpe_mem.plan, 0); if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
     size_t workSize;
     cufft_result=cufftMakePlan3d(gpe_mem.plan, nx, ny, nz, CUFFT_Z2Z, &workSize);
-    if(workSize<sizeof(Complex)*nxyz) workSize=sizeof(Complex)*nxyz;
-    myerrcheck( cudaMalloc( &gpe_mem.d_wrk , workSize ) );
+    if(workSize<sizeof(cuCplx)*nxyz) workSize=sizeof(cuCplx)*nxyz;
+    cuErrCheck( cudaMalloc( &gpe_mem.d_wrk , workSize ) );
     cufft_result=cufftSetWorkArea(gpe_mem.plan, gpe_mem.d_wrk); if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
     
-    // create buffers
-    myerrcheck( cudaMalloc( &gpe_mem.d_wrk2 , sizeof(Complex)*nxyz ) );
-    myerrcheck( cudaMalloc( &gpe_mem.d_psi , sizeof(Complex)*nxyz ) );
-    myerrcheck( cudaMalloc( &gpe_mem.d_psi2 , sizeof(Complex)*nxyz ) );
+    // allocate memory for workspace on device
+    cuErrCheck( cudaMalloc( &gpe_mem.d_wrk2, sizeof(cuCplx)*nxyz ) );
+    cuErrCheck( cudaMalloc( &gpe_mem.d_psi,  sizeof(cuCplx)*nxyz ) );
+    cuErrCheck( cudaMalloc( &gpe_mem.d_psi2, sizeof(cuCplx)*nxyz ) );
     gpe_mem.d_wrk2R = (double *) gpe_mem.d_wrk2; 
     
     gpe_mem.d_wrk3R = NULL;
@@ -443,18 +516,18 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
 
 int gpe_destroy_engine()
 {
-    cudaError err;
+    
     cufftResult cufft_result;
     free(gpe_mem.kkx);
     free(gpe_mem.kky);
     free(gpe_mem.kkz);
     cufft_result=cufftDestroy(gpe_mem.plan); if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
-    myerrcheck( cudaFree(gpe_mem.d_wrk) );
-    myerrcheck( cudaFree(gpe_mem.d_wrk2) );
-    myerrcheck( cudaFree(gpe_mem.d_psi) );
-    myerrcheck( cudaFree(gpe_mem.d_psi2) );
-    if(gpe_mem.d_wrk3R != NULL) myerrcheck( cudaFree(gpe_mem.d_wrk3R) );
-    if(gpe_mem.d_wrk3C != NULL) myerrcheck( cudaFree(gpe_mem.d_wrk3C) );
+    cuErrCheck( cudaFree(gpe_mem.d_wrk) );
+    cuErrCheck( cudaFree(gpe_mem.d_wrk2) );
+    cuErrCheck( cudaFree(gpe_mem.d_psi) );
+    cuErrCheck( cudaFree(gpe_mem.d_psi2) );
+    if(gpe_mem.d_wrk3R != NULL) cuErrCheck( cudaFree(gpe_mem.d_wrk3R) );
+    if(gpe_mem.d_wrk3C != NULL) cuErrCheck( cudaFree(gpe_mem.d_wrk3C) );
     
     return 0; // success
 }
@@ -462,64 +535,25 @@ int gpe_destroy_engine()
 
 int gpe_change_alpha_beta(double alpha, double beta)
 {
-    cudaError err;
+    
     uint ui;
     
-    myerrcheck( cudaMemcpyToSymbol(d_alpha, &alpha, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_alpha, &alpha, sizeof(double)) ) ;
     gpe_mem.alpha=alpha;
-    myerrcheck( cudaMemcpyToSymbol(d_beta, &beta, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_beta, &beta, sizeof(double)) ) ;
     gpe_mem.beta=beta;
     
-    double dt = gpe_mem.dt;
-    
-    // 0.5*dt/(i*alpha-beta)*GAMMA
-    cplx c1(GAMMA*0.5*dt,0.0);
-    cplx c2(-1.0*beta, alpha);
-    cplx c3=c1/c2;
-    Complex c4 = {c3.real(), c3.imag()};
-    myerrcheck( cudaMemcpyToSymbol(d_step_coeff, &c4, sizeof(Complex)) ) ;
-    
-    // kinetic operator mulipliers
-    Complex *carr;
-    
-    // nx direction
-    gpemalloc(carr,nx,Complex);
-    for(ui=0; ui<nx; ui++)
-    {
-        c1=exp(c3*gpe_mem.kkx[ui]*gpe_mem.kkx[ui]/(GAMMA*GAMMA));
-        carr[ui].x=c1.real(); carr[ui].y=c1.imag();
-    }
-    myerrcheck( cudaMemcpyToSymbol(d_exp_kkx2, carr, nx*sizeof(Complex)) ) ;
-    free(carr);
-    
-    // ny direction
-    gpemalloc(carr,ny,Complex);
-    for(ui=0; ui<ny; ui++)
-    {
-        c1=exp(c3*gpe_mem.kky[ui]*gpe_mem.kky[ui]/(GAMMA*GAMMA));
-        carr[ui].x=c1.real(); carr[ui].y=c1.imag();
-    }
-    myerrcheck( cudaMemcpyToSymbol(d_exp_kky2, carr, ny*sizeof(Complex)) ) ;
-    free(carr);
-    
-    // nz direction
-    gpemalloc(carr,nz,Complex);
-    for(ui=0; ui<nz; ui++)
-    {
-        c1=exp(c3*gpe_mem.kkz[ui]*gpe_mem.kkz[ui]/(GAMMA*GAMMA)) / (double)(nxyz);
-        carr[ui].x=c1.real(); carr[ui].y=c1.imag();
-    }
-    myerrcheck( cudaMemcpyToSymbol(d_exp_kkz2_over_nxyz, carr, nz*sizeof(Complex)) ) ;
-    free(carr);
+    // update reciprocal lattice
+    gpe_reciprocal_lattice_change(alpha, beta);
     
     return 0;
 }
 
 int gpe_set_time(double t0)
 {
-    cudaError err;
     
-    myerrcheck( cudaMemcpyToSymbol(d_t0, &t0, sizeof(double)) ) ;
+    
+    cuErrCheck( cudaMemcpyToSymbol(d_t0, &t0, sizeof(double)) ) ;
     gpe_mem.t0=t0;
     gpe_mem.it=0;    
     
@@ -528,34 +562,34 @@ int gpe_set_time(double t0)
 
 int gpe_set_user_params(int size, double *params)
 {
-    cudaError err;
+    
     
     if(size>MAX_USER_PARAMS) return -9;
     
-    myerrcheck( cudaMemcpyToSymbol(d_user_param, params, MAX_USER_PARAMS*sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_user_param, params, MAX_USER_PARAMS*sizeof(double)) ) ;
     
     return 0;
 }
 
 int gpe_set_quantum_friction_coeff(double qfcoeff)
 {
-    cudaError err;
+    
     if(qfcoeff!=0.0)
     {
         qfcoeff=qfcoeff/( GAMMA*(double)(nxyz) );
-        myerrcheck( cudaMemcpyToSymbol(d_qfcoeff, &qfcoeff, sizeof(double)) ) ;
+        cuErrCheck( cudaMemcpyToSymbol(d_qfcoeff, &qfcoeff, sizeof(double)) ) ;
         gpe_mem.qfcoeff=qfcoeff;
         
-        if(gpe_mem.d_wrk3R==NULL) myerrcheck( cudaMalloc( &gpe_mem.d_wrk3R , sizeof(double)*nxyz ) );
-        if(gpe_mem.d_wrk3C==NULL) myerrcheck( cudaMalloc( &gpe_mem.d_wrk3C , sizeof(Complex)*nxyz ) );
+        if(gpe_mem.d_wrk3R==NULL) cuErrCheck( cudaMalloc( &gpe_mem.d_wrk3R , sizeof(double)*nxyz ) );
+        if(gpe_mem.d_wrk3C==NULL) cuErrCheck( cudaMalloc( &gpe_mem.d_wrk3C , sizeof(cuCplx)*nxyz ) );
     }
     else
     {
-        myerrcheck( cudaMemcpyToSymbol(d_qfcoeff, &qfcoeff, sizeof(double)) ) ;
+        cuErrCheck( cudaMemcpyToSymbol(d_qfcoeff, &qfcoeff, sizeof(double)) ) ;
         gpe_mem.qfcoeff=qfcoeff;
         
-        if(gpe_mem.d_wrk3R != NULL) myerrcheck( cudaFree(gpe_mem.d_wrk3R) );
-        if(gpe_mem.d_wrk3C != NULL) myerrcheck( cudaFree(gpe_mem.d_wrk3C) );   
+        if(gpe_mem.d_wrk3R != NULL) cuErrCheck( cudaFree(gpe_mem.d_wrk3R) );
+        if(gpe_mem.d_wrk3C != NULL) cuErrCheck( cudaFree(gpe_mem.d_wrk3C) );   
         
         gpe_mem.d_wrk3R = NULL;
         gpe_mem.d_wrk3C = NULL;
@@ -564,7 +598,7 @@ int gpe_set_quantum_friction_coeff(double qfcoeff)
     return 0;
 }
 
-__global__ void __gpe_compute_density__(Complex *psi_in, double *rho_out)
+__global__ void __gpe_compute_density__(cuCplx *psi_in, double *rho_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     if(ixyz<nxyz)
@@ -573,7 +607,7 @@ __global__ void __gpe_compute_density__(Complex *psi_in, double *rho_out)
     }
 }
 
-__global__ void __gpe_normalize__(Complex *psi_inout, double *sumrho)
+__global__ void __gpe_normalize__(cuCplx *psi_inout, double *sumrho)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     if(ixyz<nxyz)
@@ -584,14 +618,13 @@ __global__ void __gpe_normalize__(Complex *psi_inout, double *sumrho)
 }
 
 // Normalizes wave function
-int gpe_normalize(Complex *psi, double *wrk)
+int gpe_normalize(cuCplx *psi, double *wrk)
 {
     __gpe_compute_density__<<<gpe_mem.blocks, gpe_mem.threads>>>(psi, wrk);
-    int ierr;
-    myerrchecksimple( local_reduction(wrk, nxyz, wrk, gpe_mem.threads, 0), ierr );
+    cuErrCheck( local_reduction(wrk, nxyz, wrk, gpe_mem.threads, 0) );
     __gpe_normalize__<<<gpe_mem.blocks, gpe_mem.threads>>>(psi, wrk);
     
-    return 0;
+    return GPE_SUCCES;
 }
 
 int gpe_normalize_psi()
@@ -599,21 +632,21 @@ int gpe_normalize_psi()
     return gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R);
 }
 
-int gpe_set_psi(double t, Complex * psi)
+int gpe_set_psi(double t, cuCplx * psi)
 {
-    cudaError err;
-    myerrcheck( cudaMemcpyToSymbol(d_t0, &t, sizeof(double)) ) ;
+    
+    cuErrCheck( cudaMemcpyToSymbol(d_t0, &t, sizeof(double)) ) ;
     gpe_mem.it=0;
     gpe_mem.t0=t;
-    myerrcheck( cudaMemcpy( gpe_mem.d_psi , psi , sizeof(Complex)*nxyz, cudaMemcpyHostToDevice ) );
+    cuErrCheck( cudaMemcpy( gpe_mem.d_psi , psi , sizeof(cuCplx)*nxyz, cudaMemcpyHostToDevice ) );
     
     return 0;
 }
 
-int gpe_get_psi(double *t, Complex * psi)
+int gpe_get_psi(double *t, cuCplx * psi)
 {
-    cudaError err;
-    myerrcheck( cudaMemcpy( psi , gpe_mem.d_psi , sizeof(Complex)*nxyz, cudaMemcpyDeviceToHost ) );
+    
+    cuErrCheck( cudaMemcpy( psi , gpe_mem.d_psi , sizeof(cuCplx)*nxyz, cudaMemcpyDeviceToHost ) );
     *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
     
     return 0;
@@ -623,13 +656,13 @@ int gpe_get_psi(double *t, Complex * psi)
 /**
  * construct  exp(-i*dt*V/2) and apply exp(-i*dt*V/2) * psi 
  * */
-__global__ void __gpe_exp_Vstep1_(uint it, Complex *psi_in, Complex *psi_out, double * wrkR)
+__global__ void __gpe_exp_Vstep1_(uint it, cuCplx *psi_in, cuCplx *psi_out, double * wrkR)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
     
     // registers
-    Complex lpsi, exp_lv;
+    cuCplx lpsi, exp_lv;
     double lrho, lv;
     
     if(ixyz<nxyz)
@@ -648,13 +681,13 @@ __global__ void __gpe_exp_Vstep1_(uint it, Complex *psi_in, Complex *psi_out, do
     }    
 }
 
-__global__ void __gpe_exp_Vstep1_qf_(uint it, Complex *psi_in, Complex *psi_out, double * wrkR, double *qfpotential)
+__global__ void __gpe_exp_Vstep1_qf_(uint it, cuCplx *psi_in, cuCplx *psi_out, double * wrkR, double *qfpotential)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
     
     // registers
-    Complex lpsi, exp_lv;
+    cuCplx lpsi, exp_lv;
     double lrho, lv;
     
     if(ixyz<nxyz)
@@ -674,13 +707,13 @@ __global__ void __gpe_exp_Vstep1_qf_(uint it, Complex *psi_in, Complex *psi_out,
     }    
 }
 
-__global__ void __gpe_exp_Vstep2_(uint it, Complex *psi_in, Complex *psi_out, double * wrkR, Complex * wrkC)
+__global__ void __gpe_exp_Vstep2_(uint it, cuCplx *psi_in, cuCplx *psi_out, double * wrkR, cuCplx * wrkC)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
     
     // registers
-    Complex lpsi, exp_lv;
+    cuCplx lpsi, exp_lv;
     double lrho, lv;
     
     if(ixyz<nxyz)
@@ -703,12 +736,12 @@ __global__ void __gpe_exp_Vstep2_(uint it, Complex *psi_in, Complex *psi_out, do
     }    
 }
 
-__global__ void __gpe_exp_Vstep2_part1_(Complex *psi_in, Complex *psi_out, double * wrkR)
+__global__ void __gpe_exp_Vstep2_part1_(cuCplx *psi_in, cuCplx *psi_out, double * wrkR)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     
     // registers
-    Complex exp_lv;
+    cuCplx exp_lv;
 
     if(ixyz<nxyz)
     {
@@ -717,13 +750,13 @@ __global__ void __gpe_exp_Vstep2_part1_(Complex *psi_in, Complex *psi_out, doubl
     }    
 }
 
-__global__ void __gpe_exp_Vstep2_part2_(uint it, Complex *psi_in, Complex *psi_out, double * wrkR, Complex * wrkC)
+__global__ void __gpe_exp_Vstep2_part2_(uint it, cuCplx *psi_in, cuCplx *psi_out, double * wrkR, cuCplx * wrkC)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
     
     // registers
-    Complex lpsi, exp_lv;
+    cuCplx lpsi, exp_lv;
     double lrho, lv;
     
     if(ixyz<nxyz)
@@ -743,13 +776,13 @@ __global__ void __gpe_exp_Vstep2_part2_(uint it, Complex *psi_in, Complex *psi_o
     }    
 }
 
-__global__ void __gpe_exp_Vstep2_part2_qf_(uint it, Complex *psi_in, Complex *psi_out, double * wrkR, Complex * wrkC, double *qfpotential)
+__global__ void __gpe_exp_Vstep2_part2_qf_(uint it, cuCplx *psi_in, cuCplx *psi_out, double * wrkR, cuCplx * wrkC, double *qfpotential)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
     
     // registers
-    Complex lpsi, exp_lv;
+    cuCplx lpsi, exp_lv;
     double lrho, lv;
     
     if(ixyz<nxyz)
@@ -770,7 +803,7 @@ __global__ void __gpe_exp_Vstep2_part2_qf_(uint it, Complex *psi_in, Complex *ps
     }    
 }
 
-__global__ void __gpe_exp_Vstep3_(Complex *psi_inout, Complex * wrkC)
+__global__ void __gpe_exp_Vstep3_(cuCplx *psi_inout, cuCplx * wrkC)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     
@@ -780,11 +813,11 @@ __global__ void __gpe_exp_Vstep3_(Complex *psi_inout, Complex * wrkC)
     }    
 }
 
-__global__ void __gpe_multiply_by_expT__(Complex *psi_in, Complex *psi_out)
+__global__ void __gpe_multiply_by_expT__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
-    Complex _wavef;
+    cuCplx _wavef;
     
     if(ixyz<nxyz)
     {
@@ -797,7 +830,7 @@ __global__ void __gpe_multiply_by_expT__(Complex *psi_in, Complex *psi_out)
     }    
 }
 
-__global__ void __gpe_multiply_by_k2_qf__(Complex *psi_in, Complex *psi_out)
+__global__ void __gpe_multiply_by_k2_qf__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
@@ -811,11 +844,11 @@ __global__ void __gpe_multiply_by_k2_qf__(Complex *psi_in, Complex *psi_out)
     }    
 }
 
-__global__ void __gpe_overlap_imag_qf__(Complex *psi1, Complex *psi2, double *overlap)
+__global__ void __gpe_overlap_imag_qf__(cuCplx *psi1, cuCplx *psi2, double *overlap)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     double lrho;
-    Complex lpsi;
+    cuCplx lpsi;
     if(ixyz<nxyz)
     {
         lpsi = psi1[ixyz]; // psi to register
@@ -824,7 +857,7 @@ __global__ void __gpe_overlap_imag_qf__(Complex *psi1, Complex *psi2, double *ov
     }
 }
 
-int gpe_compute_qf_potential(Complex *psi, Complex *wrk, double *qfpotential)
+int gpe_compute_qf_potential(cuCplx *psi, cuCplx *wrk, double *qfpotential)
 {
     cufftResult cufft_result;
     
@@ -846,14 +879,13 @@ int gpe_evolve_qf(int nt)
 {
     cufftResult cufft_result;
     int i;
-    int ierr;
         
     for(i=0; i<nt; i++)
     {
                 
         if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
         {
-            myerrchecksimple( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R), ierr);
+            cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R) );
             __gpe_exp_Vstep1_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R, gpe_mem.d_wrk3R);
         }
         else
@@ -882,12 +914,12 @@ int gpe_evolve_qf(int nt)
             if(gpe_mem.beta!=0.0)
             {
                 // with normalization between
-                myerrchecksimple( gpe_normalize(gpe_mem.d_psi2, gpe_mem.d_wrk2R+nxyz), ierr);
+                cuErrCheck( gpe_normalize(gpe_mem.d_psi2, gpe_mem.d_wrk2R+nxyz));
             }
             
             if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
             {
-                myerrchecksimple( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R), ierr);
+                cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R));
                 __gpe_exp_Vstep2_part2_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2, gpe_mem.d_wrk3R);
             }
             else
@@ -909,7 +941,7 @@ int gpe_evolve_qf(int nt)
         if(gpe_mem.beta!=0.0)
         {
             // normalize
-            myerrchecksimple( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz), ierr);
+            cuErrCheck( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz));
         }
         
         gpe_mem.it = gpe_mem.it + 1;
@@ -953,7 +985,7 @@ __global__ void __gpe_compute_vext_vint__(uint it, double *rho, double *wrk1, do
     }
 }
 
-__global__ void __gpe_multiply_by_k2__(Complex *psi_in, Complex *psi_out)
+__global__ void __gpe_multiply_by_k2__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
@@ -967,7 +999,7 @@ __global__ void __gpe_multiply_by_k2__(Complex *psi_in, Complex *psi_out)
     }    
 }
 
-__global__ void __gpe_overlap_real__(Complex *psi1, Complex *psi2, double *overlap)
+__global__ void __gpe_overlap_real__(cuCplx *psi1, cuCplx *psi2, double *overlap)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     if(ixyz<nxyz)
@@ -979,7 +1011,7 @@ __global__ void __gpe_overlap_real__(Complex *psi1, Complex *psi2, double *overl
 int gpe_energy(double *t, double *ekin, double *eint, double *eext)
 {
     int ierr;
-    cudaError err;
+    
     cufftResult cufft_result;
    
     *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
@@ -997,10 +1029,10 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext)
     double * wrk1 = (double *)gpe_mem.d_wrk;
     double * wrk2 = wrk1 + nxyz;
     __gpe_compute_vext_vint__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_wrk2R, wrk1, wrk2);
-    myerrchecksimple( local_reduction(wrk1, nxyz, wrk1, gpe_mem.threads, 0), ierr );
-    myerrchecksimple( local_reduction(wrk2, nxyz, wrk2, gpe_mem.threads, 0), ierr );
-    myerrcheck( cudaMemcpy( eext , wrk1 , sizeof(double), cudaMemcpyDeviceToHost ) );
-    myerrcheck( cudaMemcpy( eint , wrk2 , sizeof(double), cudaMemcpyDeviceToHost ) );
+    cuErrCheck( local_reduction(wrk1, nxyz, wrk1, gpe_mem.threads, 0) );
+    cuErrCheck( local_reduction(wrk2, nxyz, wrk2, gpe_mem.threads, 0) );
+    cuErrCheck( cudaMemcpy( eext , wrk1 , sizeof(double), cudaMemcpyDeviceToHost ) );
+    cuErrCheck( cudaMemcpy( eint , wrk2 , sizeof(double), cudaMemcpyDeviceToHost ) );
         
     // Compute <T> - kinetic energy
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi2, CUFFT_FORWARD);
@@ -1009,8 +1041,8 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext)
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE);
     if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;    
     __gpe_overlap_real__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
-    myerrchecksimple( local_reduction(gpe_mem.d_wrk2R, nxyz, gpe_mem.d_wrk2R, gpe_mem.threads, 0), ierr );
-    myerrcheck( cudaMemcpy( ekin , gpe_mem.d_wrk2R , sizeof(double), cudaMemcpyDeviceToHost ) );
+    cuErrCheck( local_reduction(gpe_mem.d_wrk2R, nxyz, gpe_mem.d_wrk2R, gpe_mem.threads, 0) );
+    cuErrCheck( cudaMemcpy( ekin , gpe_mem.d_wrk2R , sizeof(double), cudaMemcpyDeviceToHost ) );
     
     return 0;
 }
@@ -1018,14 +1050,14 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext)
 int gpe_get_density(double *t, double * density)
 {
     __gpe_compute_density__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2R);
-    cudaError err;
-    myerrcheck( cudaMemcpy( density , gpe_mem.d_wrk2R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
+    
+    cuErrCheck( cudaMemcpy( density , gpe_mem.d_wrk2R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
     
     *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
     return 0;
 }
 
-__global__ void __gpe_multiply_by_kx__(Complex *psi_in, Complex *psi_out)
+__global__ void __gpe_multiply_by_kx__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
@@ -1038,7 +1070,7 @@ __global__ void __gpe_multiply_by_kx__(Complex *psi_in, Complex *psi_out)
     }    
 }
 
-__global__ void __gpe_multiply_by_ky__(Complex *psi_in, Complex *psi_out)
+__global__ void __gpe_multiply_by_ky__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
@@ -1051,7 +1083,7 @@ __global__ void __gpe_multiply_by_ky__(Complex *psi_in, Complex *psi_out)
     }    
 }
 
-__global__ void __gpe_multiply_by_kz__(Complex *psi_in, Complex *psi_out)
+__global__ void __gpe_multiply_by_kz__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
@@ -1067,7 +1099,7 @@ __global__ void __gpe_multiply_by_kz__(Complex *psi_in, Complex *psi_out)
 int gpe_get_currents(double *t, double * jx, double * jy, double * jz)
 {
     int ierr;
-    cudaError err;
+    
     cufftResult cufft_result;
    
     *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
@@ -1076,7 +1108,7 @@ int gpe_get_currents(double *t, double * jx, double * jy, double * jz)
     if(gpe_mem.d_wrk3R==NULL) // I need extra memory
     {
         alloc=1;
-        myerrcheck( cudaMalloc( &gpe_mem.d_wrk3R , sizeof(double)*nxyz ) );
+        cuErrCheck( cudaMalloc( &gpe_mem.d_wrk3R , sizeof(double)*nxyz ) );
     }
     
     // move to momentum space
@@ -1088,30 +1120,30 @@ int gpe_get_currents(double *t, double * jx, double * jy, double * jz)
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_wrk2, gpe_mem.d_wrk2, CUFFT_INVERSE);
     if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;    
     __gpe_overlap_real__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2, gpe_mem.d_wrk3R);    
-    myerrcheck( cudaMemcpy( jx , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );    
+    cuErrCheck( cudaMemcpy( jx , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );    
     
     // Compute d / dy and jy
     __gpe_multiply_by_ky__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_wrk2);
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_wrk2, gpe_mem.d_wrk2, CUFFT_INVERSE);
     if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;    
     __gpe_overlap_real__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2, gpe_mem.d_wrk3R);    
-    myerrcheck( cudaMemcpy( jy , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
+    cuErrCheck( cudaMemcpy( jy , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
     
     // Compute d / dz and jz
     __gpe_multiply_by_kz__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_wrk2);
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_wrk2, gpe_mem.d_wrk2, CUFFT_INVERSE);
     if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;    
     __gpe_overlap_real__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2, gpe_mem.d_wrk3R);    
-    myerrcheck( cudaMemcpy( jz , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
+    cuErrCheck( cudaMemcpy( jz , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
 
     // Free memory
     if(alloc) 
     {
-        myerrcheck( cudaFree(gpe_mem.d_wrk3R) );  
+        cuErrCheck( cudaFree(gpe_mem.d_wrk3R) );  
         gpe_mem.d_wrk3R = NULL;      
     }
         
-    return 0;
+    return GPE_SUCCES;
 }
 
 
