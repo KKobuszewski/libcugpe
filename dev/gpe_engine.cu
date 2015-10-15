@@ -26,265 +26,52 @@
 #include <complex.h>      // not std::complex!
 
 
-#include "gpe_engine.h"
+#include "reductions.cuh"
+#include "gpe_engine.cuh"
 
 
     
 /***************************************************************************/ 
 /******************************** GLOBALS **********************************/
 /***************************************************************************/
-typedef struct
-{
-    double *kkx;
-    double *kky;
-    double *kkz;
-    cufftHandle plan; // cufft plan
-    cuCplx * d_wrk; // workspace for cufft - device
-    cuCplx * d_wrk2; // additional work space - device
-    cuCplx * d_psi; // wave function - device
-    cuCplx * d_psi2; // copy of wave function - device
-    double * d_wrk2R; // d_wrk2R = (double *) d_wrk2; - for convinience
-    double * d_wrk3R; // for quantum friction computation
-    cuCplx * d_wrk3C; // for quantum friction computation
-    
-    // other variables
-    uint it; // number of steps performed from last call gpe_set_psi
-    double dt;
-    double t0;
-    double alpha;
-    double beta;
-    double npart;
-    double qfcoeff;
-    int threads;
-    int blocks;
-    
-} gpe_mem_t;
+
 
 gpe_mem_t gpe_mem;
+gpe_flags_t gpe_flags;
 
 
-// CONST MEMORY - device
+// ============================ CONSTANT MEMORY ALLOCATION ==================================================
+
+/*
+ * TODO: check available size of constant memory
+ *       think how to "dynamically allocate constant memory" - in runtime
+ */
+// device constants
 __constant__ double d_alpha;
 __constant__ double d_beta;
 __constant__ double d_qfcoeff; // quantum friction coeff
+__constant__ cuCplx d_step_coeff; // 0.5*dt/(i*alpha-beta)
 
+// vortex properties
+__constant__ double d_vortex_x0;
+__constant__ double d_vortex_y0;
+__constant__ int8_t d_vortex_Q;
+
+// reciprocal lattice constants
 __constant__ double d_kkx[NX];
 __constant__ double d_kky[NY];
 __constant__ double d_kkz[NZ];
-__constant__ cuCplx d_step_coeff; // 0.5*dt/(i*alpha-beta)
 __constant__ cuCplx d_exp_kkx2[NX]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kx^2 )
 __constant__ cuCplx d_exp_kky2[NY]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * ky^2 )
 __constant__ cuCplx d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kz^2 ) / nxyz
 
 
-#define PARTICLES 1
-#define DIMERS 2
-
-#include "gpe_user_defined.h"
-
-#if GPE_FOR == PARTICLES
-#define GAMMA 1.0
-#elif GPE_FOR == DIMERS
-#define GAMMA 2.0
-#endif
-
-/***************************************************************************/ 
-/******************************** MACROS ***********************************/
-/***************************************************************************/ 
-#define nx NX
-#define ny NY
-#define nz NZ
-#define nxyz (nx*ny*nz)
-
-#define ixyz2ixiyiz(ixyz,_ix,_iy,_iz,i)     \
-    i=ixyz;                                 \
-    _ix=i/(ny*nz);                          \
-    i=i-_ix * ny * nz;                      \
-    _iy=i/nz;                               \
-    _iz=i-_iy * nz;
-
-#define constgpu(c) (double)(c)
-
-typedef int gpe_result_t;
-
-#define cuErrCheck(err)                                                                                 \
-    {                                                                                                   \
-        if(err != cudaSuccess)                                                                          \
-        {                                                                                               \
-            fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
-            fprintf( stderr, "CUDA ERROR %d: %s\n", err, cudaGetErrorString((cudaError_t)(err)));       \
-            return (gpe_result_t)(err);                                                                          \
-        }                                                                                               \
-    } 
-
-// TODO: Define all exit/error codes for gpe (including errors of CUFFT and CUBLAS)!
-#define GPE_SUCCES 0
-
-
-
-#define GPE_QF_EPSILON 1.0e-12
-    
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Complex operations
-////////////////////////////////////////////////////////////////////////////////
-
-// Complex addition
-static __device__ __host__ inline cuCplx cplxAdd(cuCplx a, cuCplx b)
-{
-    cuCplx c;
-    c.x = a.x + b.x;
-    c.y = a.y + b.y;
-    return c;
-}
-
-static __device__ __host__ inline cuCplx cplxSub(cuCplx a, cuCplx b)
-{
-    cuCplx c;
-    c.x = a.x - b.x;
-    c.y = a.y - b.y;
-    return c;
-}
-
-// Complex scale
-static __device__ __host__ inline cuCplx cplxScale(cuCplx a, double s)
-{
-    cuCplx c;
-    c.x = s * a.x;
-    c.y = s * a.y;
-    return c;
-}
-
-// Complex scalei = multiplication  by purely imaginay number, i.e: c = a*(i*s)
-static __device__ __host__ inline cuCplx cplxScalei(cuCplx a, double s)
-{
-    cuCplx c;
-    c.x = s * a.y * constgpu(-1.0);
-    c.y = s * a.x;
-    return c;
-}
-
-static __device__ __host__ inline cuCplx cplxConj(cuCplx a)
-{
-    a.y=-1.0*a.y;
-    return a;
-}
-
-// norm2=|a|^2
-static __device__ __host__ inline double cplxNorm2(cuCplx a)
-{
-    return (double)(a.x*a.x + a.y*a.y);
-}
-
-// abs=|a|
-static __device__ __host__ inline double cplxAbs(cuCplx a)
-{
-    return (double)(sqrt(cplxNorm2(a)));
-}
-
-static __device__ __host__ inline double cplxArg(cuCplx a)
-{
-    return (double)(atan2(a.y,a.x));
-}
-
-
-// Complex multiplication
-static __device__ __host__ inline cuCplx cplxMul(cuCplx a, cuCplx b)
-{
-    cuCplx c;
-    c.x = a.x * b.x - a.y * b.y;
-    c.y = a.x * b.y + a.y * b.x;
-    return c;
-}
-
-// Complex multiplication - and return only real part
-static __device__ __host__ inline double cplxMulR(cuCplx a, cuCplx b)
-{
-    double c;
-    c = a.x * b.x - a.y * b.y;
-    return c;
-}
-
-// Complex multiplication - and return only imag part
-static __device__ __host__ inline double cplxMulI(cuCplx a, cuCplx b)
-{
-    double c;
-    c = a.x * b.y + a.y * b.x;
-    return c;
-}
-
-static __device__ __host__ inline cuCplx cplxDiv(cuCplx a, cuCplx b)
-{
-    cuCplx c;
-    double t=b.x*b.x + b.y*b.y;
-    c.x = (a.x * b.x + a.y * b.y)/t;
-    c.y = (a.y * b.x - a.x * b.y)/t;
-    return c;
-}
-
-static __device__ __host__ inline cuCplx cplxSqrt(cuCplx z)
-{
-    cuCplx r;
-    double norm=sqrt(z.x*z.x + z.y*z.y);
-
-    r.x=sqrt((norm+z.x)/2.);
-    if(z.y>0.0) r.y=sqrt((norm-z.x)/2.);
-    else r.y=constgpu(-1.)*sqrt((norm-z.x)/2.);
-    return r;
-}
-
-static __device__ __host__ inline cuCplx cplxLog(cuCplx z)
-{
-    cuCplx r;
-    double norm=z.x*z.x + z.y*z.y;
-    double arg=atan2(z.y,z.x);
-    r.x=constgpu(0.5)*log(norm);
-    r.y=arg;
-    return r;
-}
-
-// z=exp(i*x)=cos(x)+i*sin(x), x - real number
-static __device__ __host__ inline cuCplx cplxExpi(double x)
-{
-    cuCplx r;
-    r.x=cos(x);
-    r.y=sin(x);
-    return r;
-}
-
-// z=exp(x), x - complex number
-static __device__ __host__ inline cuCplx cplxExp(cuCplx x)
-{
-    double t;
-    cuCplx r;
-    t=exp(x.x);
-    r.x=t*cos(x.y);
-    r.y=t*sin(x.y);
-    return r;
-}
-
-// returns 1/c
-static __device__ __host__ inline cuCplx cplxInv(cuCplx c)
-{
-    cuCplx r;
-    double n=c.x*c.x + c.y*c.y;
-    r.x=c.x/n;
-    r.y=constgpu(-1.0)*c.y/n;
-    return r;
-}
 
 /***************************************************************************/ 
 /****************************** FUNCTIONS **********************************/
 /***************************************************************************/
-/**
- * Function computes density from wave function psi
- * */
-inline __device__  double gpe_density(cuCplx psi)
-{
-    return GAMMA * (psi.x*psi.x + psi.y*psi.y); // |psi|^2 * GAMMA, where GAMMA=1 for particles, GAMMA=2 for dimers
-}
 
+// ============ Lattice ====================================
 
 void gpe_get_lattice(int *_nx, int *_ny, int *_nz)
 {
@@ -458,6 +245,9 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
         return -99; // not supported mode
     #endif
     
+    // Set flags
+    gpe_flags.vortex_set = 0;
+    
     // Set number of blocks, if number of threads is given
     gpe_mem.threads=nthreads;
     gpe_mem.blocks=(int)ceil((float)nxyz/nthreads);
@@ -598,6 +388,71 @@ int gpe_set_quantum_friction_coeff(double qfcoeff)
     return 0;
 }
 
+
+// ======================= Quantum vortices interface =======================================================
+
+int gpe_set_vortex(const double vortex_x0, const double vortex_y0, const int8_t Q) 
+{
+    cudaError err;
+    
+    cuErrCheck( cudaMemcpyToSymbol(d_vortex_x0, &vortex_x0, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_vortex_y0, &vortex_y0, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_vortex_Q, &Q, sizeof(int8_t)) ) ;
+    
+    gpe_flags.vortex_set = 1;
+    
+    return 0; // success
+}
+
+/*
+ * This function imprints vortex parallel to z axis crossing x,y plane in (x0,y0) point
+ * double d_vortex_x0, d_vortex_y0 - position of vortex in xy plane
+ * uint8_t d_Q_vortex - topological charge of vortex
+ * NOTE: It is considered that x0 and y0 should be chosen out of lattice points in case 
+ *       phase is corectly (mathematically) defined in every lattice point (check atan2).
+ */
+__global__ void __gpe_imprint_vortexline_zdir_(cuCplx *psi)
+{
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    uint ix, iy, iz, i;
+    
+    // registers
+    cuCplx lpsi = psi[ixyz];
+    double abs_psi, phase;
+    double _x,_y;
+    
+    if(ixyz<nxyz)
+    {
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
+        
+        _x = constgpu(ix) - 1.0*(NX/2) - d_vortex_x0;
+        _y = constgpu(iy) - 1.0*(NY/2) - d_vortex_y0;
+        //_iz = constgpu(iz) - 1.0*(NZ/2);
+        
+        //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y);
+        abs_psi = hypot(lpsi.x, lpsi.y);
+        phase = atan2(_x,_y); // atan2(0,0) == -pi/2
+        phase *= (double) (d_vortex_Q);
+        //if (d_vortex_Q != 1) phase *= (double) (d_vortex_Q);
+        lpsi.x = abs_psi*cos(phase);
+        lpsi.y = abs_psi*sin(phase);
+        
+        psi[ixyz] = lpsi;
+    }
+}
+
+// ======================= Density/Normalization ============================================================
+
+// TODO: Test speed with cublas
+
+/**
+ * Function computes density from wave function psi
+ * */
+inline __device__  double gpe_density(cuCplx psi)
+{
+    return GAMMA * (psi.x*psi.x + psi.y*psi.y); // |psi|^2 * GAMMA, where GAMMA=1 for particles, GAMMA=2 for dimers
+}
+
 __global__ void __gpe_compute_density__(cuCplx *psi_in, double *rho_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
@@ -632,6 +487,19 @@ int gpe_normalize_psi()
     return gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R);
 }
 
+int gpe_get_density(double *t, double * density)
+{
+    __gpe_compute_density__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2R);
+    
+    cuErrCheck( cudaMemcpy( density , gpe_mem.d_wrk2R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
+    
+    *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
+    return 0;
+}
+
+
+// =================== Accesing wavefunction ====================================
+
 int gpe_set_psi(double t, cuCplx * psi)
 {
     
@@ -652,6 +520,7 @@ int gpe_get_psi(double *t, cuCplx * psi)
     return 0;
 }
 
+// ======================= Evolution algorithm ============================
 
 /**
  * construct  exp(-i*dt*V/2) and apply exp(-i*dt*V/2) * psi 
@@ -951,6 +820,8 @@ int gpe_evolve_qf(int nt)
 }
 
 
+// ========================= Energy counting =================================================
+
 __global__ void __gpe_compute_vext__(uint it, double *rho, double *wrk)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
@@ -1047,15 +918,7 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext)
     return 0;
 }
 
-int gpe_get_density(double *t, double * density)
-{
-    __gpe_compute_density__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2R);
-    
-    cuErrCheck( cudaMemcpy( density , gpe_mem.d_wrk2R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
-    
-    *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
-    return 0;
-}
+// ========================== Currents of probability ================================
 
 __global__ void __gpe_multiply_by_kx__(cuCplx *psi_in, cuCplx *psi_out)
 {

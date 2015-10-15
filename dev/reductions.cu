@@ -33,7 +33,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // LOCAL REDUCTIONS
 ////////////////////////////////////////////////////////////////////////////////
-int opt_threads(int new_blocks,int threads, int current_size)
+static inline int opt_threads(int new_blocks,int threads, int current_size)
 {
     int new_threads;
     if(new_blocks==1)
@@ -50,7 +50,7 @@ int opt_threads(int new_blocks,int threads, int current_size)
 }
 
 template <unsigned int blockSize>
-__device__ void warpReduce(volatile double *sdata, unsigned int tid)
+__device__ inline void warpReduce(volatile double *sdata, unsigned int tid)
 {
     if (blockSize >= 64) sdata[tid] += sdata[tid + 32];
     if (blockSize >= 32) sdata[tid] += sdata[tid + 16];
@@ -82,7 +82,7 @@ __global__ void __reduce_kernel__(double *g_idata, double *g_odata, int n)
     if (tid == 0) g_odata[blockIdx.x] = sdata[0];
 }
 
-void call_reduction_kernel(int dimGrid, int dimBlock, int size, double *d_idata, double *d_odata, cudaStream_t stream)
+static inline void call_reduction_kernel(int dimGrid, int dimBlock, int size, double *d_idata, double *d_odata, cudaStream_t stream)
 {
     int smemSize=dimBlock*sizeof(double);
     switch (dimBlock)

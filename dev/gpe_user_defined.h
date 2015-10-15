@@ -26,9 +26,12 @@
  * @file
  * @brief cuGPE library - user defined functions
  * */
+#include <cuComplex.h>
 
 #ifndef __GPE_USER_DEFINED__
 #define __GPE_USER_DEFINED__
+
+
 
 /***************************************************************************/ 
 /**************************** USER DEFINED *********************************/
@@ -63,7 +66,7 @@ __constant__ double d_npart;
  * @param psi - psi(ix, iy, iz, it) - psi is normalized, i.e. int n(r) d^3r = npart, where n(r) computed according gpe_density(psi)
  * @return value of wave function after modification
  * */
-inline __device__  cuCplx gpe_modify_psi(uint ix, uint iy, uint iz, uint it, cuCplx psi)
+inline __device__  cuDoubleComplex gpe_modify_psi(uint ix, uint iy, uint iz, uint it, cuDoubleComplex psi)
 {
     return psi; // no change
 }

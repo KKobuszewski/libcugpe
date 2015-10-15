@@ -34,11 +34,11 @@ LD_FLAGS  = -arch $(GPU_ARCH)
 
 
 # LIBRARY NAME
-CUGPELIB  = libcugpe.a
+CUGPELIB  = ../lib/libcugpe.a
 
 # FILES
 SRC       = gpe_engine.cu reductions.cu
-OBJS      = gpe_engine.o reductions.o
+OBJS      = ../lib/gpe_engine.o ../lib/reductions.o
 
 all : $(CUGPELIB)
 
@@ -48,19 +48,20 @@ all : $(CUGPELIB)
 # http://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#using-separate-compilation-in-cuda
 $(CUGPELIB) :	#$(OBJS)
 		$(NVCC) -dc $(SRC) $(NVCC_FLAGS) $(NVCC_INC) $(NVCC_DEFS)
-		$(LD) -o libcugpe.o -dlink $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS) $(CC_LIBS)
+		mv *.o ../lib/
+		$(LD) -o ../lib/libcugpe.o -dlink $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS) $(CC_LIBS)
 		$(LD) --lib -o $@  $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS) $(CC_LIBS)
 
 .SUFFIXES:
 
 %.o:	%.cu
-	$(NVCC) -o $@ -c $< $(NVCC_FLAGS) $(NVCC_INC) $(NVCC_DEFS)
+	$(NVCC) -o ../lib/$@ -c $< $(NVCC_FLAGS) $(NVCC_INC) $(NVCC_DEFS)
 
 %.o:	%.c
-	$(CC) -o $@ -c $< $(CC_FLAGS) $(CC_INC) $(CC_DEFS)
+	$(CC) -o ../lib/$@ -c $< $(CC_FLAGS) $(CC_INC) $(CC_DEFS)
 
 /%.o:	%.cpp
-	$(CXX) -o $@ -c $< $(CXX_FLAGS) $(CXX_INC) $(CXX_DEFS)
+	$(CXX) -o ../lib/$@ -c $< $(CXX_FLAGS) $(CXX_INC) $(CXX_DEFS)
 
 clean: 
-	rm -f *.o *.linkinfo *.a
+	rm -f ../lib/*.o ../lib/*.linkinfo ../lib/*.a

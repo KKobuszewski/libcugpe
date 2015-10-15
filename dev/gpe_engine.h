@@ -30,20 +30,112 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <complex.h>      // not std::complex!
 #include <cuComplex.h>
 #include <cufft.h>
 
-#include "reductions.cuh"
 
 #ifndef __GPE_ENGINE__
 #define __GPE_ENGINE__
 
+
+#include "gpe_complex.cuh"
+#include "gpe_timing.h"
+#include "gpe_user_defined.h"
+
+
+
+/* ************************************************************************************ *
+ *                                                                                      *
+ *                                  MACRO CONSTANTS                                     *
+ *                                                                                      *
+ * ************************************************************************************ */
+
+#define PARTICLES 1
+#define DIMERS 2
+
+
+
+/* ************************************************************************************ *
+ *                                                                                      *
+ *                                     TYPEDEFS                                         *
+ *                                                                                      *
+ * ************************************************************************************ */
+
+typedef int gpe_result_t;
 typedef unsigned int uint;
-typedef cuDoubleComplex cuCplx;
-typedef double complex cplx; // test double _Complex
+
+typedef struct
+{
+    double *kkx;
+    double *kky;
+    double *kkz;
+    cufftHandle plan; // cufft plan
+    cuCplx * d_wrk; // workspace for cufft - device
+    cuCplx * d_wrk2; // additional work space - device
+    cuCplx * d_psi; // wave function - device
+    cuCplx * d_psi2; // copy of wave function - device
+    double * d_wrk2R; // d_wrk2R = (double *) d_wrk2; - for convinience
+    double * d_wrk3R; // for quantum friction computation
+    cuCplx * d_wrk3C; // for quantum friction computation
+    
+    // other variables
+    uint it; // number of steps performed from last call gpe_set_psi
+    double dt;
+    double t0;
+    double alpha;
+    double beta;
+    double npart;
+    double qfcoeff;
+    int threads;
+    int blocks;
+    
+} gpe_mem_t;
+
+typedef struct
+{
+    uint8_t vortex_set;
+} gpe_flags_t;
+
+
+/* ************************************************************************************ *
+ *                                                                                      *
+ *                                  MACRO FUNCTIONS                                     *
+ *                                                                                      *
+ * ************************************************************************************ */
+
+
+#define ixyz2ixiyiz(ixyz,_ix,_iy,_iz,i)     \
+    i=ixyz;                                 \
+    _ix=i/(ny*nz);                          \
+    i=i-_ix * ny * nz;                      \
+    _iy=i/nz;                               \
+    _iz=i-_iy * nz;
+
+
+#define cuErrCheck(err)                                                                                 \
+    {                                                                                                   \
+        if(err != cudaSuccess)                                                                          \
+        {                                                                                               \
+            fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
+            fprintf( stderr, "CUDA ERROR %d: %s\n", err, cudaGetErrorString((cudaError_t)(err)));       \
+            return (gpe_result_t)(err);                                                                          \
+        }                                                                                               \
+    } 
+
+
+/* 
+ * This macro enables simple handling of cufftResult (status of cufft-library operation)
+ */
+#define CHECK_CUFFT( cufft_res ) {                                                                      \
+    if (cufft_res != CUFFT_SUCCESS) {                                                                   \
+        printf( "CUFFT error in %s at line %d\n", __FILE__, __LINE__ );                                  \
+        return cufft_res;                                                                               \
+    }                                                                                                   \
+} 
 
 // Macro allocates memory and check final status
 #define gpemalloc(pointer,size,type)                                            \
@@ -53,7 +145,8 @@ typedef double complex cplx; // test double _Complex
         fprintf( stderr , "error: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ; \
         exit(1) ;                                                               \
     }
-    
+
+// Macro checks corectness of execution of gpe interface functions
 #define gpe_exec( cmd, ierr )                                                   \
     { ierr=cmd;                                                                 \
     if(ierr)                                                                    \
@@ -65,9 +158,50 @@ typedef double complex cplx; // test double _Complex
     } }
 
 
-/***************************************************************************/ 
-/****************************** GPE ENGINE *********************************/
-/***************************************************************************/
+
+/* ************************************************************************************ *
+ *                                                                                      *
+ *                               GPE ERRORS DEFINITION                                  *
+ *                                                                                      *
+ * ************************************************************************************ */
+// TODO: Define all exit/error codes for gpe (including errors of CUFFT and CUBLAS)!
+#define GPE_SUCCES 0
+/*
+// list of possible cufft errors
+        if (cufft_res == CUFFT_INVALID_PLAN) {printf("CUFFT_INVALID_PLAN\n");}
+        else if (cufft_res == CUFFT_ALLOC_FAILED) {printf("CUFFT_ALLOC_FAILED\n");}
+        else if (cufft_res == CUFFT_INVALID_TYPE) {printf("CUFFT_INVALID_TYPE\n");}
+        else if (cufft_res == CUFFT_INVALID_VALUE) {printf("CUFFT_INVALID_VALUE\n");}
+        else if (cufft_res == CUFFT_INTERNAL_ERROR) {printf("CUFFT_INTERNAL_ERROR\n");}
+        else if (cufft_res == CUFFT_EXEC_FAILED) {printf("CUFFT_EXEC_FAILED\n");}
+        else if (cufft_res == CUFFT_SETUP_FAILED) {printf("CUFFT_SETUP_FAILED\n");}
+        else if (cufft_res == CUFFT_INVALID_SIZE) {printf("CUFFT_INVALID_SIZE\n");}
+        else if (cufft_res == CUFFT_UNALIGNED_DATA) {printf("CUFFT_UNALIGNED_DATA\n");}
+        else if (cufft_res == CUFFT_INCOMPLETE_PARAMETER_LIST) {printf("INCOMPLETE_PARAMETER_LIST\n");}
+        else if (cufft_res == CUFFT_INVALID_DEVICE) {printf("CUFFT_INVALID_DEVICE\n");}
+        else if (cufft_res == CUFFT_NO_WORKSPACE) {printf("CUFFT_NO_WORKSPACE\n");}
+        else if (cufft_res == CUFFT_NOT_IMPLEMENTED) {printf("CUFFT_NOT_IMPLEMENTED\n");}
+        else if (cufft_res == CUFFT_PARSE_ERROR) {printf("PARSE_ERROR\n");}
+        else if (cufft_res == CUFFT_LICENSE_ERROR) {printf("CUFFT_LICENSE_ERROR\n");}
+        
+*/
+
+
+
+/* ************************************************************************************ *
+ *                                                                                      *
+ *                                    GLOBAL MEM                                        *
+ *                                                                                      *
+ * ************************************************************************************ */
+
+extern gpe_mem_t gpe_mem;
+
+
+
+
+/************************************************************************************/ 
+/****************************** GPE ENGINE NTERFACE *********************************/
+/************************************************************************************/
 /**
  * Function provides sizes of mesh 
  * provided in compilation process.
@@ -76,6 +210,7 @@ typedef double complex cplx; // test double _Complex
  * @param *_nz size of mesh in z direction [OUTPUT]
  * */
 void gpe_get_lattice(int *_nx, int *_ny, int *_nz);
+
 
 /**
  * Function creates GPE engine.
@@ -88,6 +223,7 @@ void gpe_get_lattice(int *_nx, int *_ny, int *_nz);
  * */
 int gpe_create_engine(double alpha, double beta, double dt, double npart , int nthreads = 1024);
 
+
 /**
  * Function changes values of GPE parameters
  * @param alpha \f$\alpha\f$ parameter of GPE equation [INPUT]
@@ -96,12 +232,14 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart , int n
  * */
 int gpe_change_alpha_beta(double alpha, double beta);
 
+
 /**
  * Function sets new value of time for present wave function, i.e.  \f$\Psi(t)\rightarrow\Psi(t_0)\f$
  * @param t0 new value of time [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_set_time(double t0);
+
 
 /**
  * Function sets user parameters. Maximal number of user parameters is 32.
@@ -113,6 +251,7 @@ int gpe_set_time(double t0);
  * */
 int gpe_set_user_params(int size, double *params);
 
+
 /**
  * Functions sets value of quantum friction coefficient.
  * Note - quantum friction produces extra cost in computation process - overhead is about 50%! 
@@ -120,6 +259,16 @@ int gpe_set_user_params(int size, double *params);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_set_quantum_friction_coeff(double qfcoeff);
+
+
+/**
+ * Function copies vortex parameters to constant memory
+ * @param vortex_x0 
+ * @param vortex_y0 
+ * @param Q topological charge of vortex
+ */
+int gpe_set_vortex(const double vortex_x0, const double vortex_y0, const int8_t Q);
+
 
 /**
  * Function sets wave function for specified time i.e. \f$\Psi(t)\f$
@@ -129,6 +278,7 @@ int gpe_set_quantum_friction_coeff(double qfcoeff);
  * */
 int gpe_set_psi(double t, cuCplx * psi);
 
+
 /**
  * Function returns wave function and corresponding time i.e. \f$\Psi(t)\f$
  * @param t value of time [OUTPUT]
@@ -136,6 +286,7 @@ int gpe_set_psi(double t, cuCplx * psi);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_get_psi(double *t, cuCplx * psi);
+
 
 /**
  * Function returns density computed from wave function \f$n(\vec{r}, t)=\kappa |\Psi(\vec{r}, t)|^{2}\f$ and corresponding time.
@@ -145,6 +296,7 @@ int gpe_get_psi(double *t, cuCplx * psi);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_get_density(double *t, double * density);
+
 
 /**
  * Function returns currents computed from wave function \f$\vec{j}(\vec{r}, t)=\frac{1}{\kappa}\textrm{Im}[\Psi^*(\vec{r}, t)\vec{\nabla}\Psi(\vec{r}, t)]\f$ 
@@ -158,11 +310,13 @@ int gpe_get_density(double *t, double * density);
  * */
 int gpe_get_currents(double *t, double * jx, double * jy, double * jz);
 
+
 /**
  * Function normalizes state
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_normalize_psi();
+
 
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$
@@ -171,12 +325,14 @@ int gpe_normalize_psi();
  * */
 int gpe_evolve(int nt);
 
+
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with option evolution by quantum friction potential.
  * @param nt number of steps to evolve [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_evolve_qf(int nt);
+
 
 /**
  * Function returns energy computed from wave function and corresponding time.
@@ -189,9 +345,11 @@ int gpe_evolve_qf(int nt);
  * */
 int gpe_energy(double *t, double *ekin, double *eint, double *eext);
 
+
 /**
  * Function destroys engine.
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_destroy_engine();
+
 #endif
