@@ -25,6 +25,8 @@ PROG_REAL_DEV=`echo "test_compare/test_real_dev"$NX"x"$NY"x"$NZ`
 PROG_IMAG_DEV=`echo "test_compare/test_imag_dev"$NX"x"$NY"x"$NZ`
 PROG_FRIC_DEV=`echo "test_compare/test_fric_dev"$NX"x"$NY"x"$NZ`
 
+# LIBRARY NAME
+LIB=`echo "lib/libcugpe_"$NX"x"$NY"x"$NZ".a"`
 
 # COMPILE LIBRARY
 echo "compiling library"
@@ -37,7 +39,7 @@ fi  # else there is no necessity to recompile it!
 # NEW VERSION OF LIBRARY
 cd dev
 make clean
-make
+make -e UNITARY=1
 cd ..
 
 
@@ -68,21 +70,21 @@ echo "compiling: " $PROG_IMAG_DEV
 
 g++ -c test_compare/gpe_imag.c -o test_compare/gpe_imag.o -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I./dev/ -O3 -march=native -msse4 -m64 -fopenmp -DNX=$NX -DNY=$NY -DNZ=$NZ -DDEV
 # nvcc -c test_compare/gpe_imag.c -o test_compare/gpe_imag.o -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I./dev/ -Xcompiler -O3 -Xcompiler -march=native -Xcompiler -msse4 -Xcompiler -m64 -Xcompiler -fopenmp -DNX=$NX -DNY=$NY -DNZ=$NZ -DDEV
-nvcc test_compare/gpe_imag.o lib/libcugpe.a -o $PROG_IMAG_DEV -arch $GPU_ARCH -lcudart -lcufft -lm
+nvcc test_compare/gpe_imag.o $LIB -o $PROG_IMAG_DEV -arch $GPU_ARCH -lcudart -lcufft -lm
 
 rm test_compare/gpe_imag.o
 
 echo "compiling: " $PROG_REAL_DEV
 g++ -c test_compare/gpe_real.c -o test_compare/gpe_real.o -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I./dev/ -O3 -march=native -msse4 -m64 -fopenmp -DNX=$NX -DNY=$NY -DNZ=$NZ -DDEV
 # nvcc -c test_compare/gpe_real.c -o test_compare/gpe_real.o -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I./dev/ -Xcompiler -O3 -Xcompiler -march=native -Xcompiler -msse4 -Xcompiler -m64 -Xcompiler -fopenmp -DNX=$NX -DNY=$NY -DNZ=$NZ -DDEV
-nvcc test_compare/gpe_real.o lib/libcugpe.a -o $PROG_REAL_DEV -arch $GPU_ARCH -lcudart -lcufft -lm -lgomp -Xcompiler -fopenmp
+nvcc test_compare/gpe_real.o $LIB -o $PROG_REAL_DEV -arch $GPU_ARCH -lcudart -lcufft -lm -lgomp -Xcompiler -fopenmp
 
 rm test_compare/gpe_real.o
 
 # echo "compiling: " $PROG_FRIC_OLD
-# nvcc -c gpe_engine.cu -o libcugpe.a -O3 -m64 -arch $GPU_ARCH -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -DNX=$NX -DNY=$NY -DNZ=$NZ
+# nvcc -c gpe_engine.cu -o $LIB -O3 -m64 -arch $GPU_ARCH -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -DNX=$NX -DNY=$NY -DNZ=$NZ
 # g++ -c test_compare/gpe_real.cu -o test_compare/gpe_real.o -I /usr/local/cuda-7.0/include -I /usr/local/cuda/samples/common/inc -O3 -msse4 -m64 -fopenmp -DNX=$NX -DNY=$NY -DNZ=$NZ
-# nvcc test_compare/gpe_real.o libcugpe.a -o $PROG_REAL_OLD -lcudart -lcufft -lm -lgomp -Xcompiler -fopenmp
+# nvcc test_compare/gpe_real.o $LIB -o $PROG_REAL_OLD -lcudart -lcufft -lm -lgomp -Xcompiler -fopenmp
 # 
 # rm *.o
 

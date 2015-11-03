@@ -122,7 +122,7 @@ typedef struct
         {                                                                                               \
             fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
             fprintf( stderr, "CUDA ERROR %d: %s\n", err, cudaGetErrorString((cudaError_t)(err)));       \
-            return (gpe_result_t)(err);                                                                          \
+            return (gpe_result_t)(err);                                                                 \
         }                                                                                               \
     } 
 
@@ -132,7 +132,7 @@ typedef struct
  */
 #define CHECK_CUFFT( cufft_res ) {                                                                      \
     if (cufft_res != CUFFT_SUCCESS) {                                                                   \
-        printf( "CUFFT error in %s at line %d\n", __FILE__, __LINE__ );                                  \
+        printf( "CUFFT error in %s at line %d\n", __FILE__, __LINE__ );                                 \
         return cufft_res;                                                                               \
     }                                                                                                   \
 } 
@@ -267,7 +267,7 @@ int gpe_set_quantum_friction_coeff(double qfcoeff);
  * @param vortex_y0 
  * @param Q topological charge of vortex
  */
-int gpe_set_vortex(const double vortex_x0, const double vortex_y0, const int8_t Q);
+int gpe_set_vortex(const double vortex_x0, const double vortex_y0, const int8_t Q = 1);
 
 
 /**
@@ -332,6 +332,14 @@ int gpe_evolve(int nt);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_evolve_qf(int nt);
+
+/**
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex in ite.
+ * NOTE: Assuming that function gpe_set_vortex has already been used.
+ * @param nt number of steps to evolve [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_evolve_vortex(int nt);
 
 
 /**

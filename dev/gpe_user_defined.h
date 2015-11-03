@@ -43,16 +43,18 @@
 // #define GPE_FOR PARTICLES
 #define GPE_FOR DIMERS
 
-// VARIABLES ACCESSIBLE IN THIS FILE FOR USER
-// !!!!!!!!!! DO NOT MODIFY IT !!!!!!!!!
-#define MAX_USER_PARAMS 32
-__constant__ double d_user_param[MAX_USER_PARAMS];
-__constant__ uint d_nx; // lattice size in x direction
-__constant__ uint d_ny; // lattice size in y direction
-__constant__ uint d_nz; // lattice size in z direction
-__constant__ double d_dt;
-__constant__ double d_t0;
-__constant__ double d_npart;
+// here you can #define MAX_USER_PARAMS
+#define MAX_USER_PARAMS 4
+typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT} user_params_t;
+
+// definitions of device constants that could be 
+extern __device__  double d_user_param[];
+extern __device__  uint d_nx; // lattice size in x direction
+extern __device__  uint d_ny; // lattice size in y direction
+extern __device__  uint d_nz; // lattice size in z direction
+extern __device__  double d_dt;
+extern __device__  double d_t0;
+extern __device__  double d_npart;
 
 
 /**
@@ -86,22 +88,35 @@ inline __device__  double gpe_external_potential(uint ix, uint iy, uint iz, uint
     // V(x,y,z) = 0.5*(omega_x*x)^2 + 0.5*(omega_y*y)^2 + 0.5*(omega_z*z)^2
     
     // frequencies are passed through d_user_param array
-    double omega_x = d_user_param[0];
-    double omega_y = d_user_param[1];
-    double omega_z = d_user_param[2];
+    const double omega_x = d_user_param[OMEGA_X];
+    const double omega_y = d_user_param[OMEGA_Y];
+    const double omega_z = d_user_param[OMEGA_Z];
     
     // coordinate with respect to center of the box
-    double _ix = (double)(ix) - 1.0*(NX/2);
-    double _iy = (double)(iy) - 1.0*(NY/2);
-    double _iz = (double)(iz) - 1.0*(NZ/2);
-
-
-    double trap =   0.5*_ix*_ix*omega_x*omega_x
+    const double _ix = (double)(ix) - 1.0*(NX/2);
+    const double _iy = (double)(iy) - 1.0*(NY/2);
+    const double _iz = (double)(iz) - 1.0*(NZ/2);
+    
+    
+    // TODO: use exp or anharmonicity + check HOW GRAVITY CHANGES THE MOTION
+    // TODO: maybe passing lambda will be more effective?
+    // TODO: maybe this should be done in another array? <- quicker?
+    double V_trap =   0.5*_ix*_ix*omega_x*omega_x
                   + 0.5*_iy*_iy*omega_y*omega_y 
                   + 0.5*_iz*_iz*omega_z*omega_z;
     
-    return trap;
+    return V_trap;
 }
+
+
+#if (UNITARY==1) // else BEC and modified density functional
+
+
+/* ***************************************************************************************************** *
+ *                                                                                                       *
+ *                            UNITARY REGIME DENSITY FUNCTIONAL                                          *
+ *                                                                                                       *
+ * ***************************************************************************************************** */
 
 /**
  * Function returns value of energy density functional EDF
@@ -127,6 +142,56 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
     // see: Phys. Rev. A 90, 043638 (2014)
     return 0.37*pow(3.0*M_PI*M_PI*rho, 2.0/3.0)/2.0; // unitary limit
 }
+
+
+#else // unitary or BEC
+
+/* ***************************************************************************************************** *
+ *                                                                                                       *
+ *                                BEC REGIME DENSITY FUNCTIONAL                                          *
+ *                                                                                                       *
+ * ***************************************************************************************************** */
+
+
+#define XI 0.37
+#define CONTACT 0.901
+
+/**
+ * Function returns value of energy density functional EDF
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of energy density functional
+ * */
+inline __device__  double gpe_EDF(double rho, uint it)
+{    
+    // Density energy functional for fermionic cold atoms (out of unitary regime and only positive scattering lengths)
+    // see: Phys. Rev. Lett. 112, 025301 (2014)
+    const double a = d_user_param[A_SCAT]; // scattering length
+    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
+    const double eF=0.5*kF*kF;
+    const double x=1.0/(a*kF);
+    return 0.6*eF*rho*XI*(XI+x) / ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x ) - rho/(2.0*a*a);
+}
+
+/**
+ * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of mean field
+ * */
+inline __device__  double gpe_dEDFdn(double rho, uint it)
+{    
+    // Density energy functional for fermionic cold atoms
+    // see: Phys. Rev. Lett. 112, 025301 (2014)
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
+    const double eF=0.5*kF*kF;
+    const double x=1.0/(a*kF);
+    const double D = ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x);
+    return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
+}
+
+#endif // unitary or BEC
 
 
 #endif

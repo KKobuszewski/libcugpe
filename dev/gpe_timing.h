@@ -24,18 +24,28 @@
  ***************************************************************************/ 
 #include <time.h>
 #include <sys/time.h>
+
+#ifndef __GPE_TIME_H__
+#define __GPE_TIME_H__
+
 static double t_gettimeofday ;
 static clock_t t_clock , t_clock1 ;
 static struct timeval s ;
 
-void b_t( void ) 
+// TODO: Evolve this file
+//       Cuda timing
+//       Macros?
+
+static inline void b_t( void ) 
 { /* hack together a clock w/ microsecond resolution */
   gettimeofday( &s , NULL ) ;
   t_clock = clock() ;
   t_gettimeofday = s.tv_sec + 1e-6 * s.tv_usec ;
 }
 
-double e_t( int type = 0 ) 
+
+//TODO:   template?
+static inline double e_t( int type = 0 ) 
 {
   switch ( type ) 
     {
@@ -52,3 +62,6 @@ double e_t( int type = 0 )
     }
   return t_gettimeofday ;
 }
+
+
+#endif

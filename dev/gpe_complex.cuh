@@ -32,8 +32,8 @@
 
 #define constgpu(c) (double)(c)
 
-typedef cuDoubleComplex cuCplx;
-typedef double complex cplx; // test double _Complex
+typedef cuDoubleComplex cuCplx; // structure with two doubles x and y for real and imaginary parts, binary compatible with <ccomplex>
+typedef double complex cplx;    // <ccomplex> complex number type, not binary compatible with c++ <complex> class
 
 
 ////////////////////////////////////////////////////////////////////////////////

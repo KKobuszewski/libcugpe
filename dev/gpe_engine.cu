@@ -66,6 +66,16 @@ __constant__ cuCplx d_exp_kky2[NY]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * k
 __constant__ cuCplx d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(2gamma) * kz^2 ) / nxyz
 
 
+#ifndef MAX_USER_PARAMS
+#define MAX_USER_PARAMS 32
+#endif
+__constant__ double d_user_param[MAX_USER_PARAMS];
+__constant__ uint d_nx; // lattice size in x direction
+__constant__ uint d_ny; // lattice size in y direction
+__constant__ uint d_nz; // lattice size in z direction
+__constant__ double d_dt;
+__constant__ double d_t0;
+__constant__ double d_npart;
 
 /***************************************************************************/ 
 /****************************** FUNCTIONS **********************************/
@@ -744,6 +754,15 @@ int gpe_compute_qf_potential(cuCplx *psi, cuCplx *wrk, double *qfpotential)
 /**
  * Function evolves wave funcion nt steps 
  * */
+int gpe_evolve(int nt)
+{
+    printf("Function not implemented!\n");
+    return GPE_SUCCES;
+}
+
+/**
+ * Function evolves wave funcion nt steps 
+ * */
 int gpe_evolve_qf(int nt)
 {
     cufftResult cufft_result;
@@ -819,6 +838,83 @@ int gpe_evolve_qf(int nt)
     return 0;
 }
 
+int gpe_evolve_vortex(int nt)
+{
+    cufftResult cufft_result;
+    int i;
+        
+    for(i=0; i<nt; i++)
+    {
+        __gpe_imprint_vortexline_zdir_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi);
+        cuErrCheck( cudaGetLastError() );
+        
+        
+        if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+        {
+            cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R) );
+            __gpe_exp_Vstep1_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R, gpe_mem.d_wrk3R);
+        }
+        else
+        {
+            // potential part exp(V/2)
+            __gpe_exp_Vstep1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        if(gpe_mem.beta==0.0 && gpe_mem.qfcoeff==0.0)
+        {
+            // without normalization
+            __gpe_exp_Vstep2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+        }
+        else
+        {
+            __gpe_exp_Vstep2_part1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+            
+            if(gpe_mem.beta!=0.0)
+            {
+                // with normalization between
+                cuErrCheck( gpe_normalize(gpe_mem.d_psi2, gpe_mem.d_wrk2R+nxyz));
+            }
+            
+            if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+            {
+                cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R));
+                __gpe_exp_Vstep2_part2_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2, gpe_mem.d_wrk3R);
+            }
+            else
+            {
+                __gpe_exp_Vstep2_part2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+            }
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        __gpe_exp_Vstep3_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+        
+        if(gpe_mem.beta!=0.0)
+        {
+            // normalize
+            cuErrCheck( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz));
+        }
+        
+        gpe_mem.it = gpe_mem.it + 1;
+    }
+    
+    return 0;
+}
 
 // ========================= Energy counting =================================================
 

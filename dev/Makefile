@@ -4,6 +4,10 @@ NX = 256
 NY = 32
 NZ = 32
 
+# SIMULATION PARAMETERS
+# change for 1 to simulate unitary fermi gas
+UNITARY = 0
+
 # GPU COMPUTE CAPABILITY
 GPU_ARCH = sm_52
 
@@ -36,21 +40,24 @@ LD_FLAGS  = -arch $(GPU_ARCH)
 # LIBRARY NAME
 CUGPELIB  = ../lib/libcugpe.a
 
+
 # FILES
 SRC       = gpe_engine.cu reductions.cu
 OBJS      = ../lib/gpe_engine.o ../lib/reductions.o
 
-all : $(CUGPELIB)
-
 # TODO:
-# think one more time about this
-# and read carefully:
+# think one more time about this and read carefully:
 # http://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#using-separate-compilation-in-cuda
-$(CUGPELIB) :	#$(OBJS)
+$(CUGPELIB) :	
 		$(NVCC) -dc $(SRC) $(NVCC_FLAGS) $(NVCC_INC) $(NVCC_DEFS)
 		mv *.o ../lib/
-		$(LD) -o ../lib/libcugpe.o -dlink $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS) $(CC_LIBS)
-		$(LD) --lib -o $@  $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS) $(CC_LIBS)
+		$(LD) -o ../lib/libcugpe.o -dlink $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS)
+		$(LD) --lib -o $@ ../lib/libcugpe.o $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS)
+		mv $@ ../lib/libcugpe_$(NX)x$(NY)x$(NZ).a
+		make clean
+
+# all : 
+# 	$(CUGPELIB)
 
 .SUFFIXES:
 
@@ -64,4 +71,7 @@ $(CUGPELIB) :	#$(OBJS)
 	$(CXX) -o ../lib/$@ -c $< $(CXX_FLAGS) $(CXX_INC) $(CXX_DEFS)
 
 clean: 
+	rm -f ../lib/*.o ../lib/*.linkinfo
+
+purge:
 	rm -f ../lib/*.o ../lib/*.linkinfo ../lib/*.a
