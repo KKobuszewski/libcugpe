@@ -41,7 +41,9 @@
  * GPE_FOR can be either PARTICLES or DIMERS. If PARTICLES then \f$\kappa=1\f$, if DIMERS then \f$\kappa=2\f$
  * */
 // #define GPE_FOR PARTICLES
-#define GPE_FOR DIMERS
+#ifndef GPE_FOR
+#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
+#endif
 
 // here you can #define MAX_USER_PARAMS
 #define MAX_USER_PARAMS 4
@@ -108,8 +110,9 @@ inline __device__  double gpe_external_potential(uint ix, uint iy, uint iz, uint
     return V_trap;
 }
 
+// a little magic with preprocessor
 
-#if (UNITARY==1) // else BEC and modified density functional
+#if (INTERACTIONS==0) // else BEC and modified density functional
 
 
 /* ***************************************************************************************************** *
@@ -144,7 +147,7 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
 }
 
 
-#else // unitary or BEC
+#elif (INTERACTIONS==1) // unitary or BEC
 
 /* ***************************************************************************************************** *
  *                                                                                                       *
@@ -180,7 +183,7 @@ inline __device__  double gpe_EDF(double rho, uint it)
  * @return value of mean field
  * */
 inline __device__  double gpe_dEDFdn(double rho, uint it)
-{    
+{
     // Density energy functional for fermionic cold atoms
     // see: Phys. Rev. Lett. 112, 025301 (2014)
     const double a = d_user_param[A_SCAT]; // scattering length passed via user params array

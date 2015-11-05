@@ -26,7 +26,7 @@ PROG_IMAG_DEV=`echo "test_compare/test_imag_dev"$NX"x"$NY"x"$NZ`
 PROG_FRIC_DEV=`echo "test_compare/test_fric_dev"$NX"x"$NY"x"$NZ`
 
 # LIBRARY NAME
-LIB=`echo "lib/libcugpe_"$NX"x"$NY"x"$NZ".a"`
+LIB=`echo "lib/libcugpe_unitary_"$NX"x"$NY"x"$NZ".a"`
 
 # COMPILE LIBRARY
 echo "compiling library"
@@ -39,7 +39,7 @@ fi  # else there is no necessity to recompile it!
 # NEW VERSION OF LIBRARY
 cd dev
 make clean
-make -e UNITARY=1
+make 
 cd ..
 
 

@@ -108,7 +108,7 @@ int main( int argc , char ** argv )
     
     // create directory for files
     char dirname[256];
-    sprintf( dirname,"AspectRatio_%2.1lf__a_%.1lf__r0_%.1lf__%s",aspect_ratio,scat_lenght,r0,datetime );
+    sprintf( dirname,"AspectRatio_%2.1lf_%dx%dx%d/ITE__a_%e__r0_%.1lf__%s",aspect_ratio,nx,ny,nz,scat_lenght,r0,datetime );
     struct stat st = {0};
     if (stat(dirname, &st) == -1) { mkdir(dirname, 0777); }
     
@@ -136,7 +136,6 @@ int main( int argc , char ** argv )
     
     // Set parameters
     // TODO: change params on device to use only aspect ratio and omega_x for counting external potential
-    // TODO: create enum describing elements of params array
     // TODO: Corelate omega_x with 'thiner' range of cloud
     // Prepare user defined parameters
     double omega_x = 0.01;
@@ -148,7 +147,7 @@ int main( int argc , char ** argv )
     params[A_SCAT] = scat_lenght;
     
     // Copy parameters to engine
-    gpe_exec( gpe_set_user_params(3, params), ierr );
+    gpe_exec( gpe_set_user_params(4, params), ierr );
     
     
     
@@ -317,6 +316,9 @@ int main( int argc , char ** argv )
     fprintf(file_info_vortex,"%d # ny\n",ny);
     fprintf(file_info_vortex,"%d # nz\n",nz);
     fprintf(file_info_vortex,"%lf # dt\n",dt);
+    fprintf(file_info_vortex,"%d # nom\n",nom);
+    fprintf(file_info_vortex,"%e # a_scattering\n",scat_lenght);
+    fprintf(file_info_vortex,"%lf # \n");
     fprintf(file_info_vortex,"1 # nom\n");
     fclose(file_info_vortex);
     
@@ -328,3 +330,12 @@ int main( int argc , char ** argv )
     
     return 0;
 }
+
+static inline void save_info(char* dftc_filename,
+                      const int nx,
+                      const int ny,
+                      const int nz,
+                      const double dt,
+                      const int nom,
+                      const double scat_lenght,
+                      const double 

@@ -4,6 +4,25 @@ NX = 256
 NY = 32
 NZ = 32
 
+
+# SIMULATION PARAMETERS
+# change parameters with make -e INTERACTIONS_STR=unitary/nonunitary
+ifdef $(INTERACTIONS_STR)
+	ifeq ($(INTERACTIONS_STR), unitary)
+		INTERACTIONS = 0
+	endif
+	ifeq ($(INTERACTIONS_STR), nonunitary)
+		INTERACTIONS = 1
+	endif
+	# GIVE MORE OPTIONS
+	# TODO: GPE FOR BOSONS WITH DEFINITION OF GPE_FOR PARTICLES
+else 
+	# unitary gas by default
+	INTERACTIONS_STR = unitary
+	INTERACTIONS = 0
+endif
+
+
 # GPU COMPUTE CAPABILITY
 GPU_ARCH = sm_52
 
@@ -11,14 +30,14 @@ GPU_ARCH = sm_52
 CC 	  = gcc
 CC_FLAGS  = -Wall -Wundef -m64 -march=native -O3 -msse4 -ftree-vectorizer-verbose=1 -fopenmp -fPIC
 CC_INC    = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I. -I../dev/
-CC_DEFS   = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ)
+CC_DEFS   = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
 CC_LIBS   = -lcudart -lgomp -lpthread -lm
 
 # c++ compiler
 CXX	  = g++
 CXX_FLAGS = -Wall -Wundef -m64 -march=native -O3 -msse4 -ftree-vectorizer-verbose=1 -fopenmp -fPIC
 CXX_INC   = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I. -I../dev/
-CXX_DEFS  = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ)
+CXX_DEFS  = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
 CXX_PATH  = -L../lib/
 CXX_LIBS  = -lcudart -lgomp -lpthread -lm
 
@@ -26,8 +45,8 @@ CXX_LIBS  = -lcudart -lgomp -lpthread -lm
 NVCC      = /usr/local/cuda-7.0/bin/nvcc
 NVCC_FLAGS= -m64 -O3 -arch $(GPU_ARCH) -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -Xcompiler -fPIC
 NVCC_INC  = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I. -I../dev/
-NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ)
-NVCC_LIBS = -lcudart -lcufft -lm -lcugpe_$(NX)x$(NY)x$(NZ)
+NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
+NVCC_LIBS = -lcudart -lcufft -lm -lcugpe_$(INTERACTIONS_STR)_$(NX)x$(NY)x$(NZ)
 
 # linker
 LD        = $(NVCC)
@@ -35,8 +54,8 @@ LD_FLAGS  = -arch $(GPU_ARCH)
 
 
 # PRGORAMS' NAMES
-PROG_ITE  = ite_vortex_$(NX)x$(NY)x$(NZ).exe
-PROG_RTE  = rte_vortex_$(NX)x$(NY)x$(NZ).exe
+PROG_ITE  = ite_vortex_$(INTERACTIONS_STR)_$(NX)x$(NY)x$(NZ).exe
+PROG_RTE  = rte_vortex_$(INTERACTIONS_STR)_$(NX)x$(NY)x$(NZ).exe
 
 # FILES
 SRC_ITE   = ite_vortex.c

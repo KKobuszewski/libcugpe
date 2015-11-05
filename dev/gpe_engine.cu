@@ -362,11 +362,9 @@ int gpe_set_time(double t0)
 
 int gpe_set_user_params(int size, double *params)
 {
-    
-    
     if(size>MAX_USER_PARAMS) return -9;
     
-    cuErrCheck( cudaMemcpyToSymbol(d_user_param, params, MAX_USER_PARAMS*sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_user_param, params, MAX_USER_PARAMS*sizeof(double)) );
     
     return 0;
 }

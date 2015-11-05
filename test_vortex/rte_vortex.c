@@ -34,6 +34,8 @@
 
 #include <ctime>
 #include <queue>
+#include <cstring>
+#include <iostream>
 
 #include <omp.h>
 
@@ -47,91 +49,14 @@
 /**************************** GPE HEADERS **********************************/
 /***************************************************************************/
 #include "gpe_engine.h"
+#include "gpe_queue.h"
 
-uint8_t flag_stop = 0;
 
-
-typedef struct
-{
-    std::queue<cplx*> q;
-    uint64_t counter;
-    uint64_t max_size;
-    cplx** data;
-} gpe_queue;
+/***************************************************************************/ 
+/****************************** GPE QUEUE **********************************/
+/***************************************************************************/
 
 gpe_queue wf_queue;
-
-/*
- * Use it in this way:
- * cplx* psi = NULL;
- * void* ret = create_gpe_queue(uint64_t nxyz);
- * if (!ret) psi = (cplx*) ret;
- */
-inline void* create_gpe_queue(const uint64_t nxyz) 
-{
-    cudaError err;
-    
-    std::queue<cplx*> queue;
-    wf_queue.q = queue;
-    
-    wf_queue.counter = 0;
-    
-    uint64_t queue_max_size = ( sysconf( _SC_PHYS_PAGES ) * sysconf( _SC_PAGE_SIZE ) )/( nxyz * sizeof(cplx) );
-    queue_max_size = lround( ceil( 0.5*((double) queue_max_size) ) );
-    if (queue_max_size < 1) { printf("Error: Wavefunction is to big to allocate in RAM!\n"); exit(EXIT_FAILURE); }
-    printf("Maximal sizeof queue: %lu\n", queue_max_size);
-    wf_queue.max_size = queue_max_size;
-    
-    wf_queue.data = (cplx**) malloc( queue_max_size*sizeof(cplx*) );
-    for (uint64_t ii = 0; ii < queue_max_size; ii++) 
-    {
-        err=cudaHostAlloc( &(wf_queue.data[ii]) , sizeof(cplx)*nxyz, cudaHostAllocDefault );
-        if (err != cudaSuccess) 
-        {
-            printf("Error: Cannot allocate memory for gpe_queue!\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    
-    if (queue_max_size == 1)
-        return (void*) wf_queue.data[0];
-    else 
-        return NULL;
-}
-
-inline cplx* get_gpe_queue_buffer()
-{
-    return wf_queue.data[ wf_queue.counter % wf_queue.max_size ]; // returns poiter to one of allocated elements
-}
-
-inline void add_to_gpe_queue(cplx* psi) 
-{
-     // checks if it is possible to add next element to
-    while(1) { if (wf_queue.q.size() < wf_queue.max_size) {wf_queue.q.push(psi); break;} }
-    wf_queue.counter++;
-}
-
-inline cplx* take_off_gpe_queue() 
-{
-    cplx* psi = wf_queue.q.front();
-    wf_queue.q.pop();
-    return psi;
-}
-
-inline void destroy_gpe_queue() 
-{
-    cudaError err;
-    for (uint64_t ii = 0; ii < wf_queue.max_size; ii++) 
-    {
-        err=cudaFreeHost( wf_queue.data[ii] );
-        if (err != cudaSuccess) 
-        {
-            printf("Error: Cannot allocate memory for initial wavefunction!\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    free(wf_queue.data);
-}
 
 #pragma GCC push_options
 #pragma GCC optimize ("O0")
@@ -163,21 +88,80 @@ inline void process_gpe_queue(FILE* psiFramesFile, const uint64_t nxyz)
 }
 #pragma GCC pop_options
 
+
+/***************************************************************************/ 
+/********************* READING TXT FILES  **********************************/
+/***************************************************************************/
+
+
+
+char *getword(FILE *fp)
+{
+    char word[100];
+    int ch; 
+    size_t idx ;
+
+    for (idx=0; idx < sizeof word -1; ) {
+        ch = fgetc(fp);
+        if (ch == EOF) break;
+        if (!isalpha(ch)) {
+           if (!idx) continue; // Nothing read yet; skip this character
+           else break; // we are beyond the current word
+           }
+        word[idx++] = tolower(ch);
+        }
+    if (!idx) return NULL; // No characters were successfully read
+    word[idx] = '\0';
+    return strdup(word);
+}
+
+
+
 /***************************************************************************/ 
 /************************* MAIN FUNCTION  **********************************/
 /***************************************************************************/
 int main( int argc , char ** argv ) 
 {
     // SETTINGS
-    double alpha=1.0;
-    double beta=0.0;
+    double alpha=0.0;
+    double beta=1.0;
     double dt=0.025;
     double npart=1000.0;
+    double aspect_ratio=0.0; // to be set as cmd line parameter
+    double scat_lenght=0.0;
+    char path[256];
     int device=0;
     
     int ierr;
     cudaError err;
     
+    // =============== read cmd args =======================================
+    if (argc < 3)
+    {
+        printf("Error: To less parameters given to program!\n");
+        printf("param1: <aspect_ratio> - harmonic trap shape\n");
+        printf("param2: <scat_lenght>  - scattering length of atoms in condensate\n");
+        printf("param3: <path>         - path to file *.dftc.\n");
+        return EXIT_FAILURE;
+    }
+    else
+    {
+        sscanf(argv[1],"%lf",&aspect_ratio);
+        sscanf(argv[2],"%lf",&scat_lenght );
+        sscanf(argv[3],"%s", &path[0]     );
+        // TODO: Set device via cmd line!
+    }
+    
+    // ============= check path =========================
+    struct stat st0 = {0};
+    if (stat(path, &st0) == -1) {printf("Error: Cannot find directory %s!\n",path); return EXIT_FAILURE;}
+    
+    
+    // ============= read information from *.dftc.info =======================
+    char filename_init_info
+    
+    
+    // ============= set device ==============================================
     err=cudaSetDevice( device );
     if(err != cudaSuccess) 
     {
@@ -204,7 +188,7 @@ int main( int argc , char ** argv )
     
     // create directory for files
     char dirname[256];
-    sprintf( dirname,"./gpe_data%dx%dx%d_%s",nx,ny,nz,datetime );
+    sprintf( dirname,"AspectRatio_%2.1lf_%dx%dx%d/RTE__a_%e__r0_%.1lf__%s",aspect_ratio,nx,ny,nz,scat_lenght,r0,datetime );;
     struct stat st = {0};
     if (stat(dirname, &st) == -1) { mkdir(dirname, 0777); }
     
@@ -220,8 +204,17 @@ int main( int argc , char ** argv )
     if (!energyFile) printf("Error: Cannot open file %s\n",filename_psi);
     
     
-    // ***************** Loading initial wavefunction **************************
     printf("# REAL TIME EVOLUTION\n");
+    printf("\n");
+    printf("# PARAMETERS OF SIMULATION:\n");
+    printf("Aspect ratio:      %2.2lf\n",aspect_ratio);
+    printf("Scattering lenght: %lf\n"   ,scat_lenght );
+    printf("\n");
+    
+    // ***************** Loading initial wavefunction **************************
+    
+    printf("# LOADING WAVEFUNTION\n");
+    printf("\tprocessing file %s\n",path);
     
     
     
@@ -237,7 +230,7 @@ int main( int argc , char ** argv )
     // Set initial wave function - read it from file psi.dat (see gpe_imag.cu)
     printf("# Reading psi from file\n");
     FILE * psiInitFile;
-    psiInitFile = fopen ("init_vortex256x32x32.dat", "rb");
+    psiInitFile = fopen (path, "rb");
     size_t readok = fread (psi_init , sizeof(cplx)*nxyz, 1, psiInitFile);
     if (readok != 1)
     {
@@ -250,17 +243,24 @@ int main( int argc , char ** argv )
     printf("# Creating engine\n");
     gpe_exec( gpe_create_engine(alpha, beta, dt, npart), ierr );
     
+    // Set parameters
+    // TODO: change params on device to use only aspect ratio and omega_x for counting external potential
+    // TODO: Corelate omega_x with 'thiner' range of cloud
     // Prepare user defined parameters
-    double params[3];
-    params[0] = 0.01; // omega_x
-    params[1] = 0.10; // omega_y
-    params[2] = 0.11; // omega_z
+    double omega_x = 0.01;
+    
+    double params[4];
+    params[OMEGA_X] = omega_x;                                // omega_x
+    params[OMEGA_Y] = aspect_ratio*aspect_ratio*omega_x;      // omega_y
+    params[OMEGA_Z] = aspect_ratio*aspect_ratio*omega_x;      // omega_z
+    params[A_SCAT] = scat_lenght;
     
     // Copy parameters to engine
-    gpe_exec( gpe_set_user_params(3, params), ierr );
+    gpe_exec( gpe_set_user_params(4, params), ierr );
+    
     
     // Copy wave function to GPU
-    gpe_exec( gpe_set_psi(0.0, (cuCplx*) psi_init), ierr ) ;
+    gpe_exec( gpe_set_psi(0.0, (cuCplx*) psi_init), ierr );
     
     err = cudaFreeHost(psi_init);
     if (err != cudaSuccess) 
@@ -286,10 +286,10 @@ int main( int argc , char ** argv )
     printf("%8.2f %12.8f %12.8f %12.8f %12.8f %12.8f\n",sim_time, etot/npart, ekin/npart, eint/npart, eext/npart, (eint+eext)/npart);  
     
     // set OpenMP parameters
-    omp_set_num_threads(2);
+    //omp_set_num_threads(2);
     omp_set_nested(1);
     
-    #pragma omp parallel shared(wf_queue, psi)
+    #pragma omp parallel num_threads(2) shared(wf_queue, psi)
     {
         int gtid = omp_get_thread_num();
         #pragma omp sections 

@@ -5,8 +5,21 @@ NY = 32
 NZ = 32
 
 # SIMULATION PARAMETERS
-# change for 1 to simulate unitary fermi gas
-UNITARY = 0
+# change parameters with make -e INTERACTIONS_STR=unitary/nonunitary
+ifdef $(INTERACTIONS_STR)
+	ifeq ($(INTERACTIONS_STR), unitary)
+		INTERACTIONS = 0
+	endif
+	ifeq ($(INTERACTIONS_STR), nonunitary)
+		INTERACTIONS = 1
+	endif
+	# GIVE MORE OPTIONS
+else 
+	# unitary gas by default
+	INTERACTIONS_STR = unitary
+	INTERACTIONS = 0
+endif
+
 
 # GPU COMPUTE CAPABILITY
 GPU_ARCH = sm_52
@@ -15,21 +28,21 @@ GPU_ARCH = sm_52
 CC 	  = gcc
 CC_FLAGS  = -Wall -Wundef -m64 -march=native -O3 -msse4 -ftree-vectorizer-verbose=1 -fopenmp -fPIC
 CC_INC    = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
-CC_DEFS   = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ)
+CC_DEFS   = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
 CC_LIBS   = -lcudart -lgomp -lpthread -lm
 
 # c++ compiler
 CXX	  = g++
 CXX_FLAGS = -Wall -Wundef -m64 -march=native -O3 -msse4 -ftree-vectorizer-verbose=1 -fopenmp -fPIC
 CXX_INC   = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
-CXX_DEFS  = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ)
+CXX_DEFS  = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
 CXX_LIBS  = -lcudart -lgomp -lpthread -lm
 
 # cuda compiler
 NVCC      = /usr/local/cuda-7.0/bin/nvcc
 NVCC_FLAGS= -m64 -O3 -arch $(GPU_ARCH) -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -Xcompiler -fPIC
 NVCC_INC  = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
-NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ)
+NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
 NVCC_LIBS = -lcudart -lcufft -lm
 
 # linker
@@ -38,7 +51,8 @@ LD_FLAGS  = -arch $(GPU_ARCH)
 
 
 # LIBRARY NAME
-CUGPELIB  = ../lib/libcugpe.a
+
+CUGPELIB  = ../lib/libcugpe_$(INTERACTIONS_STR)_$(NX)x$(NY)x$(NZ).a
 
 
 # FILES
@@ -53,7 +67,7 @@ $(CUGPELIB) :
 		mv *.o ../lib/
 		$(LD) -o ../lib/libcugpe.o -dlink $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS)
 		$(LD) --lib -o $@ ../lib/libcugpe.o $(OBJS) $(LD_FLAGS) $(NVCC_LIBS) $(CXX_LIBS)
-		mv $@ ../lib/libcugpe_$(NX)x$(NY)x$(NZ).a
+#		mv $@ ../lib/libcugpe_$(NX)x$(NY)x$(NZ).a
 		make clean
 
 # all : 
@@ -71,7 +85,7 @@ $(CUGPELIB) :
 	$(CXX) -o ../lib/$@ -c $< $(CXX_FLAGS) $(CXX_INC) $(CXX_DEFS)
 
 clean: 
-	rm -f ../lib/*.o ../lib/*.linkinfo
+	rm -f ../lib/*.o
 
 purge:
 	rm -f ../lib/*.o ../lib/*.linkinfo ../lib/*.a
