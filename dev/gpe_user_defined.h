@@ -31,6 +31,8 @@
 #ifndef __GPE_USER_DEFINED__
 #define __GPE_USER_DEFINED__
 
+#define PARTICLES 1
+#define DIMERS 2
 
 
 /***************************************************************************/ 
@@ -41,9 +43,7 @@
  * GPE_FOR can be either PARTICLES or DIMERS. If PARTICLES then \f$\kappa=1\f$, if DIMERS then \f$\kappa=2\f$
  * */
 // #define GPE_FOR PARTICLES
-#ifndef GPE_FOR
-#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
-#endif
+
 
 // here you can #define MAX_USER_PARAMS
 #define MAX_USER_PARAMS 4
@@ -112,7 +112,7 @@ inline __device__  double gpe_external_potential(uint ix, uint iy, uint iz, uint
 
 // a little magic with preprocessor
 
-#if (INTERACTIONS==0) // else BEC and modified density functional
+#if (INTERACTIONS==0) // unitary fermi gas for dimers
 
 
 /* ***************************************************************************************************** *
@@ -120,6 +120,10 @@ inline __device__  double gpe_external_potential(uint ix, uint iy, uint iz, uint
  *                            UNITARY REGIME DENSITY FUNCTIONAL                                          *
  *                                                                                                       *
  * ***************************************************************************************************** */
+
+#ifndef GPE_FOR
+#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
+#endif
 
 /**
  * Function returns value of energy density functional EDF
@@ -146,8 +150,12 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
     return 0.37*pow(3.0*M_PI*M_PI*rho, 2.0/3.0)/2.0; // unitary limit
 }
 
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR FERMIONIC DIMERS IN UNITARY LIMIT\n");
+}
 
-#elif (INTERACTIONS==1) // unitary or BEC
+#elif (INTERACTIONS==1) // BEC regime for fermionic dimers
 
 /* ***************************************************************************************************** *
  *                                                                                                       *
@@ -155,6 +163,9 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
  *                                                                                                       *
  * ***************************************************************************************************** */
 
+#ifndef GPE_FOR
+#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
+#endif
 
 #define XI 0.37
 #define CONTACT 0.901
@@ -194,7 +205,51 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
     return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
 }
 
-#endif // unitary or BEC
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR FERMIONIC DIMERS IN BEC LIMIT\n");
+}
+
+
+#elif (INTERACTIONS == -1)
+
+#ifndef GPE_FOR
+#define GPE_FOR PARTICLES // simple bosonic GP
+#endif
+
+
+/**
+ * Function returns value of energy density functional EDF
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of energy density functional
+ * */
+inline __device__  double gpe_EDF(double rho, uint it)
+{
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    // TODO: Change constant !!!
+    return 2*M_PI*a*rho*rho; // unitary limit
+}
+
+/**
+ * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of mean field
+ * */
+inline __device__  double gpe_dEDFdn(double rho, uint it)
+{
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    // TODO: Change constant !!!
+    return 4*M_PI*a*rho; // unitary limit
+}
+
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR BOSONS IN BEC\n");
+}
+
+#endif // end choosing type
 
 
 #endif

@@ -47,6 +47,7 @@
 /**************************** GPE HEADERS **********************************/
 /***************************************************************************/
 #include "gpe_engine.h"
+#include "gpe_io.h"
 
 /*
  * run with:
@@ -71,6 +72,8 @@ int main( int argc , char ** argv )
         printf("param1: <aspect_ratio> - harmonic trap shape\n");
         printf("param2: <scat_lenght>  - scattering length of atoms in condensate\n");
         printf("param3: <r0>           - position of vortex\n");
+        printf("param4:  <device>          - specify device numer\n");
+        
         return EXIT_FAILURE;
     }
     else
@@ -78,7 +81,7 @@ int main( int argc , char ** argv )
         sscanf(argv[1],"%lf",&aspect_ratio);
         sscanf(argv[2],"%lf",&scat_lenght );
         sscanf(argv[3],"%lf",&r0          );
-        // TODO: Set device via cmd line!
+        if (argc > 4) sscanf(argv[4],"%d",&device);
     }
     
     int ierr;
@@ -108,7 +111,7 @@ int main( int argc , char ** argv )
     
     // create directory for files
     char dirname[256];
-    sprintf( dirname,"AspectRatio_%2.1lf_%dx%dx%d/ITE__a_%e__r0_%.1lf__%s",aspect_ratio,nx,ny,nz,scat_lenght,r0,datetime );
+    sprintf( dirname,"AspectRatio_%2.1lf_%dx%dx%d_ITE__a_%.1e__r0_%.1lf__%s",aspect_ratio,nx,ny,nz,scat_lenght,r0,datetime );
     struct stat st = {0};
     if (stat(dirname, &st) == -1) { mkdir(dirname, 0777); }
     
@@ -224,15 +227,7 @@ int main( int argc , char ** argv )
     fclose (file_psi_gs);
     
     // Create dftc.info file
-    char filename_info_gs[256];
-    sprintf( filename_info_gs,"%s.info",filename_psi_gs );
-    FILE* file_info_gs = fopen(filename_info_gs,"w");
-    fprintf(file_info_gs,"%d # nx\n",nx);
-    fprintf(file_info_gs,"%d # ny\n",ny);
-    fprintf(file_info_gs,"%d # nz\n",nz);
-    fprintf(file_info_gs,"%lf # dt\n",dt);
-    fprintf(file_info_gs,"1 # nom\n");
-    fclose(file_info_gs);
+    save_info(filename_psi_gs, nx, ny, nz, dt, 1, scat_lenght, aspect_ratio, omega_x, r0, npart);
     
     printf("\n");
     
@@ -284,8 +279,8 @@ int main( int argc , char ** argv )
         etot = ekin + eint + eext;
         double diff=(etot_prev-etot)/npart; // diference in energy per particle
         printf("%8.2f %12.8f %12.8f %12.8f %12.8f %12.8f %12.6g %12.4f\n",simtime, etot/npart, ekin/npart, eint/npart, eext/npart, (eint+eext)/npart, diff, rt); 
-        fprintf(file_energy_vortex ,"%8.2f %12.15lf %12.15lf %12.15lf %12.15lf %12.15lf %12.8f %12.6g %12.4f\n",
-                                simtime, etot/npart, ekin/npart, eint/npart, eext/npart, (eint+eext)/npart, diff, rt);
+        fprintf(file_energy_vortex ,"%8.2f %12.15lf %12.15lf %12.15lf %12.15lf %12.15lf %12.6g %12.4f\n",
+                        simtime, etot/npart, ekin/npart, eint/npart, eext/npart, (eint+eext)/npart, diff, rt);
         
         if(fabs(diff)<1.0e-14) break;
     }
@@ -296,7 +291,7 @@ int main( int argc , char ** argv )
     printf("# Writing psi to file\n");
     
     // Get wave function and save it to file
-    gpe_exec( gpe_get_psi(&simtime, psi), ierr ) ; 
+    gpe_exec( gpe_get_psi(&simtime, psi), ierr ); 
     
     
     // Open file
@@ -309,18 +304,7 @@ int main( int argc , char ** argv )
     fclose (file_vortex);
     
     // Create dftc.info file
-    char filename_info_vortex[256];
-    sprintf( filename_info_vortex,"%s.info",filename_vortex );
-    FILE* file_info_vortex = fopen(filename_info_vortex,"w");
-    fprintf(file_info_vortex,"%d # nx\n",nx);
-    fprintf(file_info_vortex,"%d # ny\n",ny);
-    fprintf(file_info_vortex,"%d # nz\n",nz);
-    fprintf(file_info_vortex,"%lf # dt\n",dt);
-    fprintf(file_info_vortex,"%d # nom\n",nom);
-    fprintf(file_info_vortex,"%e # a_scattering\n",scat_lenght);
-    fprintf(file_info_vortex,"%lf # \n");
-    fprintf(file_info_vortex,"1 # nom\n");
-    fclose(file_info_vortex);
+    save_info(filename_vortex, nx, ny, nz, dt, 1, scat_lenght, aspect_ratio, omega_x, r0, npart);
     
     // Destroy engine
     gpe_exec( gpe_destroy_engine(), ierr) ;
@@ -330,12 +314,3 @@ int main( int argc , char ** argv )
     
     return 0;
 }
-
-static inline void save_info(char* dftc_filename,
-                      const int nx,
-                      const int ny,
-                      const int nz,
-                      const double dt,
-                      const int nom,
-                      const double scat_lenght,
-                      const double 

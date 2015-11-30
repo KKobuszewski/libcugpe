@@ -4,21 +4,26 @@ NX = 256
 NY = 32
 NZ = 32
 
+PROG_DESC = 
+INTERACTIONS = 
+
 # SIMULATION PARAMETERS
-# change parameters with make -e INTERACTIONS_STR=unitary/nonunitary
-ifdef $(INTERACTIONS_STR)
-	ifeq ($(INTERACTIONS_STR), unitary)
-		INTERACTIONS = 0
-	endif
-	ifeq ($(INTERACTIONS_STR), nonunitary)
-		INTERACTIONS = 1
-	endif
-	# GIVE MORE OPTIONS
-else 
-	# unitary gas by default
-	INTERACTIONS_STR = unitary
-	INTERACTIONS = 0
-endif
+# change parameters with make -e PROG_DESC=
+# ifdef $(PROG_DESC)
+# 	ifeq ($(PROG_DESC), unitary)
+# 		INTERACTIONS = 0
+# 	endif
+# 	ifeq ($(PROG_DESC), nonunitary)
+# 		INTERACTIONS = 1
+# 	endif
+# 	ifeq ($(PROG_DESC), bec)
+# 		INTERACTIONS = -1
+# 	endif
+# else 
+# 	# unitary gas by default
+# 	PROG_DESC = unitary
+# 	INTERACTIONS = 0
+# endif
 
 
 # GPU COMPUTE CAPABILITY
@@ -52,7 +57,7 @@ LD_FLAGS  = -arch $(GPU_ARCH)
 
 # LIBRARY NAME
 
-CUGPELIB  = ../lib/libcugpe_$(INTERACTIONS_STR)_$(NX)x$(NY)x$(NZ).a
+CUGPELIB  = ../lib/libcugpe_$(PROG_DESC)_$(NX)x$(NY)x$(NZ).a
 
 
 # FILES

@@ -332,7 +332,6 @@ int gpe_destroy_engine()
     return 0; // success
 }
 
-
 int gpe_change_alpha_beta(double alpha, double beta)
 {
     
@@ -347,6 +346,18 @@ int gpe_change_alpha_beta(double alpha, double beta)
     gpe_reciprocal_lattice_change(alpha, beta);
     
     return 0;
+}
+
+int gpe_set_rte_evolution()
+{
+    gpe_change_alpha_beta(1.0,0.0);
+    return GPE_SUCCES;
+}
+
+int gpe_set_ite_evolution()
+{
+    gpe_change_alpha_beta(0.0,1.0);
+    return GPE_SUCCES;
 }
 
 int gpe_set_time(double t0)
@@ -843,6 +854,7 @@ int gpe_evolve_vortex(int nt)
         
     for(i=0; i<nt; i++)
     {
+        // changing the phase
         __gpe_imprint_vortexline_zdir_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi);
         cuErrCheck( cudaGetLastError() );
         

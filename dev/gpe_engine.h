@@ -54,8 +54,6 @@
  *                                                                                      *
  * ************************************************************************************ */
 
-#define PARTICLES 1
-#define DIMERS 2
 
 
 
@@ -231,6 +229,20 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart , int n
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_change_alpha_beta(double alpha, double beta);
+
+
+/**
+ * Function sets evolution to real time one (enables investigating dynamics of condensate).
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_set_rte_evolution();
+
+
+/**
+ * Function sets evolution to imaginary time one (enables finding ground state of wavefunction).
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_set_rte_evolution();
 
 
 /**

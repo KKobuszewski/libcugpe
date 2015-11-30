@@ -50,6 +50,7 @@
 /***************************************************************************/
 #include "gpe_engine.h"
 #include "gpe_queue.h"
+#include "gpe_io.h"
 
 
 /***************************************************************************/ 
@@ -125,31 +126,39 @@ int main( int argc , char ** argv )
     // SETTINGS
     double alpha=0.0;
     double beta=1.0;
-    double dt=0.025;
-    double npart=1000.0;
+    double dt=0.025;      // TODO: Should be given by a user
+    double npart=1000.0;  // TODO: Should be read from .dftc.info file
     double aspect_ratio=0.0; // to be set as cmd line parameter
     double scat_lenght=0.0;
+    double omega_x = 0.01;
+    double r0 = 0.;
     char path[256];
     int device=0;
+    int snapshots = 10;
+    int nom = 0;
     
     int ierr;
     cudaError err;
     
     // =============== read cmd args =======================================
-    if (argc < 3)
+    if (argc < 2)
     {
         printf("Error: To less parameters given to program!\n");
-        printf("param1: <aspect_ratio> - harmonic trap shape\n");
-        printf("param2: <scat_lenght>  - scattering length of atoms in condensate\n");
-        printf("param3: <path>         - path to file *.dftc.\n");
+        printf("param1:  <path>            - path to file *.dftc\n");
+        printf("param2:  <number of saves> - number of snapshots of wavefunction\n");
+        printf("param3:  <dt>              - time step of simulation\n");
+        printf("param4:  <device>          - specify device numer\n");
+        
         return EXIT_FAILURE;
     }
     else
     {
-        sscanf(argv[1],"%lf",&aspect_ratio);
-        sscanf(argv[2],"%lf",&scat_lenght );
-        sscanf(argv[3],"%s", &path[0]     );
-        // TODO: Set device via cmd line!
+        //sscanf(argv[1],"%lf",&aspect_ratio);
+        //sscanf(argv[2],"%lf",&scat_lenght );
+        sscanf(argv[1],"%s", &path[0] );
+        if (argc > 2) sscanf(argv[2],"%d" , &snapshots );
+        if (argc > 3) sscanf(argv[3],"%lf", &dt        );
+        if (argc > 4) sscanf(argv[4],"%d" , &device    );
     }
     
     // ============= check path =========================
@@ -158,12 +167,17 @@ int main( int argc , char ** argv )
     
     
     // ============= read information from *.dftc.info =======================
-    char filename_init_info
+    char filename_init_info[256];
+    sprintf( filename_init_info,"%s.info",path);
+    printf("# READING PARAMETERS FROM FILE:\t%s.info\n",filename_init_info);
     
+    int nx_info,ny_info,nz_info, nom_info; // TODO: Use nom info to 
+    double dt_info;
+    get_info(filename_init_info, &nx_info, &ny_info, &nz_info, &dt_info, &nom_info, &scat_lenght, &aspect_ratio, &omega_x, &r0, &npart);
     
     // ============= set device ==============================================
     err=cudaSetDevice( device );
-    if(err != cudaSuccess) 
+    if (err != cudaSuccess) 
     {
         printf("Error: Cannot cudaSetDevice(%d)!\n", device);
         return 1;
@@ -172,6 +186,13 @@ int main( int argc , char ** argv )
     int nx, ny, nz;
     gpe_get_lattice(&nx, &ny, &nz);
     printf("# GPE engine compiled for lattice: %d x %d x %d\n", nx, ny, nz);
+    
+    if ( (nx != nx_info) || (ny != ny_info) || (nz != nz_info) )
+    {
+        printf("\nError: wavefunction form file %s do not matches gpe engine's lattice!\n",path);
+        printf("\tPlease use %dx%dx%d lattice.\n\n",nx_info,ny_info,nz_info);
+        exit(EXIT_FAILURE);
+    }
     
     uint nxyz=nx*ny*nz;
 //     uint ix, iy, iz, ixyz;
@@ -186,22 +207,22 @@ int main( int argc , char ** argv )
     time(&t);
     strftime(datetime, sizeof(datetime), "%F_%T", localtime(&t));
     
-    // create directory for files
+    // ================ create directory for files ==================================
     char dirname[256];
-    sprintf( dirname,"AspectRatio_%2.1lf_%dx%dx%d/RTE__a_%e__r0_%.1lf__%s",aspect_ratio,nx,ny,nz,scat_lenght,r0,datetime );;
+    sprintf( dirname,"AspectRatio_%2.1lf_%dx%dx%d_RTE__a_%.1e__r0_%.1lf__%s",aspect_ratio,nx,ny,nz,scat_lenght,r0,datetime );
     struct stat st = {0};
     if (stat(dirname, &st) == -1) { mkdir(dirname, 0777); }
     
-    // create files for saving data
+    // ================ create files for saving data ================================
     char filename_psi[256];
-    sprintf( filename_psi,"%s/psi_frames.bin",dirname );
+    sprintf( filename_psi,"%s/psi_frames.dftc",dirname );
     FILE* psiFramesFile = fopen(filename_psi,"wb");
-    if (!psiFramesFile) printf("Error: Cannot open file %s\n",filename_psi);
+    if (!psiFramesFile) {printf("Error: Cannot open file %s\n",filename_psi); return EXIT_FAILURE;}
     
     char filename_energy[256];
     sprintf( filename_energy,"%s/energy.txt",dirname );
     FILE* energyFile = fopen(filename_energy,"w");
-    if (!energyFile) printf("Error: Cannot open file %s\n",filename_psi);
+    if (!energyFile) {printf("Error: Cannot open file %s\n",filename_psi); return EXIT_FAILURE;}
     
     
     printf("# REAL TIME EVOLUTION\n");
@@ -247,7 +268,6 @@ int main( int argc , char ** argv )
     // TODO: change params on device to use only aspect ratio and omega_x for counting external potential
     // TODO: Corelate omega_x with 'thiner' range of cloud
     // Prepare user defined parameters
-    double omega_x = 0.01;
     
     double params[4];
     params[OMEGA_X] = omega_x;                                // omega_x
@@ -291,7 +311,7 @@ int main( int argc , char ** argv )
     
     #pragma omp parallel num_threads(2) shared(wf_queue, psi)
     {
-        int gtid = omp_get_thread_num();
+        //int gtid = omp_get_thread_num();
         #pragma omp sections 
         {
             // 1st section - creating data
