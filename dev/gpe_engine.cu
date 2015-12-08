@@ -1152,7 +1152,7 @@ int gpe_get_currents(double *t, double * jx, double * jy, double * jz)
 
 // ===================== Dipolar evolution specific functions ======================================================
 
-
+#ifdef DIPOLAR
 /*
  * We denote:
  * vdd  - dipole-dipole interaction pseudopotential, must be convolved with density of wavefunction.
@@ -1419,4 +1419,4 @@ int gpe_evolve_dipolar(int nt)
     return 0;
 }
 
-
+#endif

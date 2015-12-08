@@ -37,10 +37,12 @@ nvcc -c ./orginal/gpe_engine.cu -o ./orginal/gpe_engine.o -m64 -O3 -arch $GPU_AR
 fi  # else there is no necessity to recompile it!
 
 # NEW VERSION OF LIBRARY
-cd dev
-make clean
-make 
-cd ..
+# cd dev
+# make clean
+# make 
+# cd ..
+
+./check_lib.sh $NX $NY $NZ unitary 0
 
 
 # COMPILE PROGRAMS

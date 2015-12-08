@@ -354,7 +354,7 @@ int gpe_evolve_qf(int nt);
 int gpe_evolve_vortex(int nt);
 
 
-
+#ifdef DIPOLAR
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with dipolar interactions specified by a_dip constant.
  * (a_dip
@@ -363,7 +363,7 @@ int gpe_evolve_vortex(int nt);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_evolve_dipolar(int nt);
-
+#endif
 
 /**
  * Function returns energy computed from wave function and corresponding time.
