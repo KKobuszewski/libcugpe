@@ -45,9 +45,6 @@
 // #define GPE_FOR PARTICLES
 
 
-// here you can #define MAX_USER_PARAMS
-#define MAX_USER_PARAMS 4
-typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT} user_params_t;
 
 // definitions of device constants that could be 
 extern __device__  double d_user_param[];
@@ -57,6 +54,272 @@ extern __device__  uint d_nz; // lattice size in z direction
 extern __device__  double d_dt;
 extern __device__  double d_t0;
 extern __device__  double d_npart;
+
+
+// a little magic with preprocessor
+
+#if (INTERACTIONS==0) // unitary fermi gas for dimers
+
+
+/* ***************************************************************************************************** *
+ *                                                                                                       *
+ *                            UNITARY REGIME DENSITY FUNCTIONAL                                          *
+ *                                                                                                       *
+ * ***************************************************************************************************** */
+
+// here you can #define MAX_USER_PARAMS
+#define MAX_USER_PARAMS 4
+typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT} user_params_t;
+
+#ifndef GPE_FOR
+#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
+#endif
+
+/**
+ * Function returns value of energy density functional EDF
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of energy density functional
+ * */
+inline __device__  double gpe_EDF(double rho, uint it)
+{
+    // Density energy functional for unitary Fermi gas
+    // see: Phys. Rev. A 90, 043638 (2014)
+    return 0.37*0.6*rho*pow(3.0*M_PI*M_PI*rho, 2.0/3.0)/2.; // unitary limit
+}
+
+/**
+ * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of mean field
+ * */
+inline __device__  double gpe_dEDFdn(double rho, uint it)
+{
+    // see: Phys. Rev. A 90, 043638 (2014)
+    return 0.37*pow(3.0*M_PI*M_PI*rho, 2.0/3.0)/2.0; // unitary limit
+}
+
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR FERMIONIC DIMERS IN UNITARY LIMIT\n");
+}
+
+#elif (INTERACTIONS==1) // BEC regime for fermionic dimers
+
+/* ***************************************************************************************************** *
+ *                                                                                                       *
+ *                                BEC REGIME DENSITY FUNCTIONAL                                          *
+ *                                                                                                       *
+ * ***************************************************************************************************** */
+
+// here you can #define MAX_USER_PARAMS
+#define MAX_USER_PARAMS 4
+typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT} user_params_t;
+
+#ifndef GPE_FOR
+#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
+#endif
+
+#define XI 0.37
+#define CONTACT 0.901
+
+/**
+ * Function returns value of energy density functional EDF
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of energy density functional
+ * */
+inline __device__  double gpe_EDF(double rho, uint it)
+{    
+    // Density energy functional for fermionic cold atoms (out of unitary regime and only positive scattering lengths)
+    // see: Phys. Rev. Lett. 112, 025301 (2014)
+    const double a = d_user_param[A_SCAT]; // scattering length
+    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
+    const double eF=0.5*kF*kF;
+    const double x=1.0/(a*kF);
+    return 0.6*eF*rho*XI*(XI+x) / ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x ) - rho/(2.0*a*a);
+}
+
+/**
+ * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of mean field
+ * */
+inline __device__  double gpe_dEDFdn(double rho, uint it)
+{
+    // Density energy functional for fermionic cold atoms
+    // see: Phys. Rev. Lett. 112, 025301 (2014)
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
+    const double eF=0.5*kF*kF;
+    const double x=1.0/(a*kF);
+    const double D = ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x);
+    return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
+}
+
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR FERMIONIC DIMERS IN BEC LIMIT\n");
+}
+
+
+#elif (INTERACTIONS == -1) // simple bosonic BEC
+
+/* ***************************************************************************************************** *
+ *                                                                                                       *
+ *                                BOSONIC BEC DENSITY FUNCTIONAL                                         *
+ *                                                                                                       *
+ * ***************************************************************************************************** */
+
+// here you can #define MAX_USER_PARAMS
+#define MAX_USER_PARAMS 4
+typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT} user_params_t;
+
+#ifndef GPE_FOR
+#define GPE_FOR PARTICLES // simple bosonic GP
+#endif
+
+
+/**
+ * Function returns value of energy density functional EDF
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of energy density functional
+ * */
+inline __device__  double gpe_EDF(double rho, uint it)
+{
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    // TODO: Change constant !!!
+    return 2*M_PI*a*rho*rho; // unitary limit
+}
+
+/**
+ * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of mean field
+ * */
+inline __device__  double gpe_dEDFdn(double rho, uint it)
+{
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    // TODO: Change constant !!!
+    return 4*M_PI*a*rho; // unitary limit
+}
+
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR BOSONS IN BEC\n");
+}
+
+
+#elif (INTERACTIONS == -2)
+
+/* ***************************************************************************************************** *
+ *                                                                                                       *
+ *                       BOSONIC BEC WITH DIPOLAR INTERACTIONS DENSITY FUNCTIONAL                        *
+ *                                                                                                       *
+ * ***************************************************************************************************** */
+
+// here you can #define MAX_USER_PARAMS
+#define MAX_USER_PARAMS 5
+typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT, A_DIP} user_params_t;
+
+#ifndef GPE_FOR
+#define GPE_FOR PARTICLES // simple bosonic GP
+#endif
+
+#ifndef DIPOLAR
+#define DIPOLAR // use this in C++ program and not in CUDA library
+#endif
+
+#include <float.h> // for macro DBL_EPSILON
+
+/**
+ * Function returns value of energy density functional EDF for contat interactions only. 
+ * This function is used to compute energy, so that we can get contact part of interactions energy.
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of energy density functional
+ * */
+inline __device__  double gpe_EDF(double rho, uint it)
+{
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    // TODO: Change constant !!!
+    return 2*M_PI*a*rho*rho; // unitary limit
+}
+
+/**
+ * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
+ * @param rho - density, computed according gpe_density(psi)
+ * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
+ * @return value of mean field
+ * */
+inline __device__  double gpe_dEDFdn(double rho, uint it)
+{
+    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    // TODO: Change constant !!!
+    return 4*M_PI*a*rho; // unitary limit
+}
+
+
+
+
+// ============================= DIPOLAR INTERACTIONS SPECIFIC CASE ======================================
+
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// TODO: optimize contact interactions
+#define DIRAC_DELTA_TRANSFORM 0.06349363593424097  // 1/(2 pi)^3/2 - transform of Dirac delta in 3-d
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+/*
+ * 
+ */
+inline __device__  double gpe_vint_k(double kx, double ky, double kz)
+{
+    const double a_con = d_user_param[A_SCAT];
+    const double a_dip = d_user_param[A_DIP];
+    const double k_sq = kx*kx + ky*ky + kz*kz;
+    
+    if ( k_sq < DBL_EPSILON )
+        return 0;
+    else
+    {
+        return 4.*M_PI*(a_dip*3.*kz/(kx*kx + ky*ky + kz*kz) - a_dip + a_con*DIRAC_DELTA_TRANSFORM); // TODO: Check if kz or kx is in numerator!!!
+    }
+}
+
+/*
+ * 
+ */
+inline __device__  double gpe_vdd_k(double kx, double ky, double kz)
+{
+    const double a_dip = d_user_param[A_DIP];
+    const double k_sq = kx*kx + ky*ky + kz*kz;
+    
+    if ( k_sq < DBL_EPSILON )
+    {
+        //printf("kx: %e\tky: %e\tkz: %e\tDBL_EPSILON: %e\tk_sq: %e\n",kx,ky,kz,DBL_EPSILON,k_sq);
+        return 0;
+    }
+    else
+    {
+        return 4.*M_PI*a_dip*(3.*kz/(kx*kx + ky*ky + kz*kz) - 1.); // TODO: Check if kz or kx is in numerator!!! 
+    }  
+}
+
+
+static inline void gpe_print_interactions_type()
+{
+    printf("# GPE FOR BOSONS IN BEC WITH DIPOLAR INTERACTIONS\n");
+}
+
+
+#endif // end choosing type
+
 
 
 /**
@@ -110,146 +373,6 @@ inline __device__  double gpe_external_potential(uint ix, uint iy, uint iz, uint
     return V_trap;
 }
 
-// a little magic with preprocessor
-
-#if (INTERACTIONS==0) // unitary fermi gas for dimers
-
-
-/* ***************************************************************************************************** *
- *                                                                                                       *
- *                            UNITARY REGIME DENSITY FUNCTIONAL                                          *
- *                                                                                                       *
- * ***************************************************************************************************** */
-
-#ifndef GPE_FOR
-#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
-#endif
-
-/**
- * Function returns value of energy density functional EDF
- * @param rho - density, computed according gpe_density(psi)
- * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
- * @return value of energy density functional
- * */
-inline __device__  double gpe_EDF(double rho, uint it)
-{
-    // Density energy functional for unitary Fermi gas
-    // see: Phys. Rev. A 90, 043638 (2014)
-    return 0.37*0.6*rho*pow(3.0*M_PI*M_PI*rho, 2.0/3.0)/2.; // unitary limit
-}
-
-/**
- * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
- * @param rho - density, computed according gpe_density(psi)
- * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
- * @return value of mean field
- * */
-inline __device__  double gpe_dEDFdn(double rho, uint it)
-{
-    // see: Phys. Rev. A 90, 043638 (2014)
-    return 0.37*pow(3.0*M_PI*M_PI*rho, 2.0/3.0)/2.0; // unitary limit
-}
-
-static inline void gpe_print_interactions_type()
-{
-    printf("# GPE FOR FERMIONIC DIMERS IN UNITARY LIMIT\n");
-}
-
-#elif (INTERACTIONS==1) // BEC regime for fermionic dimers
-
-/* ***************************************************************************************************** *
- *                                                                                                       *
- *                                BEC REGIME DENSITY FUNCTIONAL                                          *
- *                                                                                                       *
- * ***************************************************************************************************** */
-
-#ifndef GPE_FOR
-#define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
-#endif
-
-#define XI 0.37
-#define CONTACT 0.901
-
-/**
- * Function returns value of energy density functional EDF
- * @param rho - density, computed according gpe_density(psi)
- * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
- * @return value of energy density functional
- * */
-inline __device__  double gpe_EDF(double rho, uint it)
-{    
-    // Density energy functional for fermionic cold atoms (out of unitary regime and only positive scattering lengths)
-    // see: Phys. Rev. Lett. 112, 025301 (2014)
-    const double a = d_user_param[A_SCAT]; // scattering length
-    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
-    const double eF=0.5*kF*kF;
-    const double x=1.0/(a*kF);
-    return 0.6*eF*rho*XI*(XI+x) / ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x ) - rho/(2.0*a*a);
-}
-
-/**
- * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
- * @param rho - density, computed according gpe_density(psi)
- * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
- * @return value of mean field
- * */
-inline __device__  double gpe_dEDFdn(double rho, uint it)
-{
-    // Density energy functional for fermionic cold atoms
-    // see: Phys. Rev. Lett. 112, 025301 (2014)
-    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
-    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
-    const double eF=0.5*kF*kF;
-    const double x=1.0/(a*kF);
-    const double D = ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x);
-    return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
-}
-
-static inline void gpe_print_interactions_type()
-{
-    printf("# GPE FOR FERMIONIC DIMERS IN BEC LIMIT\n");
-}
-
-
-#elif (INTERACTIONS == -1)
-
-#ifndef GPE_FOR
-#define GPE_FOR PARTICLES // simple bosonic GP
-#endif
-
-
-/**
- * Function returns value of energy density functional EDF
- * @param rho - density, computed according gpe_density(psi)
- * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
- * @return value of energy density functional
- * */
-inline __device__  double gpe_EDF(double rho, uint it)
-{
-    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
-    // TODO: Change constant !!!
-    return 2*M_PI*a*rho*rho; // unitary limit
-}
-
-/**
- * Function returns value of mean field, i.e U= d_EDF / dn - variational derivative of EDF with respect to density
- * @param rho - density, computed according gpe_density(psi)
- * @param it - time value, ie. time = d_t0 + it*d_dt, d_t0 and d_dt are global variables
- * @return value of mean field
- * */
-inline __device__  double gpe_dEDFdn(double rho, uint it)
-{
-    const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
-    // TODO: Change constant !!!
-    return 4*M_PI*a*rho; // unitary limit
-}
-
-static inline void gpe_print_interactions_type()
-{
-    printf("# GPE FOR BOSONS IN BEC\n");
-}
-
-#endif // end choosing type
 
 
 #endif
