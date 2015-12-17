@@ -27,7 +27,7 @@ INTERACTIONS =
 
 
 # GPU COMPUTE CAPABILITY
-GPU_ARCH = sm_52
+GPU_ARCH = -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=sm_37 -gencode arch=compute_52,code=sm_52 -gencode arch=compute_52,code=compute_52
 
 # c compiler
 CC 	  = gcc
@@ -52,7 +52,7 @@ NVCC_LIBS = -lcudart -lcufft -lm
 
 # linker
 LD        = $(NVCC)
-LD_FLAGS  = -arch $(GPU_ARCH)
+LD_FLAGS  = $(GPU_ARCH)
 
 
 # LIBRARY NAME

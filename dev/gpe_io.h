@@ -1,13 +1,10 @@
-
-
-
-
-
 #ifndef __GPE_IO_H__
 #define __GPE_IO_H__
 
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "gpe_user_defined.h"
 
 // TODO: make structure struct gpe_info
 
@@ -29,16 +26,66 @@ static inline void save_info(   char* dftc_filename,
     char info_filename[256];
     sprintf( info_filename,"%s.info",dftc_filename);
     FILE* info_file = fopen(info_filename,"w");
-    fprintf(info_file,"%d # nx\n",nx);
-    fprintf(info_file,"%d # ny\n",ny);
-    fprintf(info_file,"%d # nz\n",nz);
-    fprintf(info_file,"%lf # dt\n",dt);
-    fprintf(info_file,"%d # nom\n",nom);
-    fprintf(info_file,"%lf # a_scattering\n",scat_lenght);
-    fprintf(info_file,"%lf # aspect_ratio\n",aspect_ratio);
-    fprintf(info_file,"%lf # omega_x\n",omega_x);
-    fprintf(info_file,"%lf # r0\n",r0);
-    fprintf(info_file,"%lf # npart\n",npart);
+    fprintf(info_file,"%d   # nx\n",nx);
+    fprintf(info_file,"%d   # ny\n",ny);
+    fprintf(info_file,"%d   # nz\n",nz);
+    fprintf(info_file,"%lf   # dt\n",dt);
+    fprintf(info_file,"%d   # nom\n",nom);
+    fprintf(info_file,"%lf   # a_scattering\n",scat_lenght);
+    fprintf(info_file,"%lf   # aspect_ratio\n",aspect_ratio);
+    fprintf(info_file,"%lf   # omega_x\n",omega_x);
+    fprintf(info_file,"%lf   # r0\n",r0);
+    fprintf(info_file,"%lf   # npart\n",npart);
+    fclose(info_file);
+}
+
+static inline void gpe_save_info(   char* dftc_filename,
+                                    const int nx,
+                                    const int ny,
+                                    const int nz,
+                                    const double dt,
+                                    const int nom,
+                                    const double scat_lenght,
+                                    const double aspect_ratio,
+                                    const double omega_x,
+                                    const double r0,
+                                    const double npart)
+{
+    
+    // Create dftc.info file
+    char info_filename[256];
+    sprintf( info_filename,"%s.info",dftc_filename);
+    FILE* info_file = fopen(info_filename,"w");
+    
+#if (GPE_FOR == PARTICLES)
+    fprintf(info_file,"%s   # system type\n","bosons");
+    #ifdef DIPOLAR
+    fprintf(info_file,"%s   # mode\n","dipolar");
+    #else
+    fprintf(info_file,"%s   # mode\n","contact");
+    #endif
+    
+#elif (GPE_FOR == DIMERS)
+    fprintf(info_file,"%s   # system type\n","fermions");
+    #ifdef UNITARY
+    fprintf(info_file,"%s   # mode\n","unitary");
+    #else
+    fprintf(info_file,"%s   # mode\n","bec");
+    #endif
+#else
+    fprintf("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nError describing system of simulation!\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+#endif
+    
+    fprintf(info_file,"%d   # nx\n",nx);
+    fprintf(info_file,"%d   # ny\n",ny);
+    fprintf(info_file,"%d   # nz\n",nz);
+    fprintf(info_file,"%lf   # dt\n",dt);
+    fprintf(info_file,"%d   # nom\n",nom);
+    fprintf(info_file,"%lf   # a_scattering\n",scat_lenght);
+    fprintf(info_file,"%lf   # aspect_ratio\n",aspect_ratio);
+    fprintf(info_file,"%lf   # omega_x\n",omega_x);
+    fprintf(info_file,"%lf   # r0\n",r0);
+    fprintf(info_file,"%lf   # npart\n",npart);
     fclose(info_file);
 }
 

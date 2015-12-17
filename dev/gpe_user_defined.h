@@ -34,6 +34,7 @@
 #define PARTICLES 1
 #define DIMERS 2
 
+#define M_PI 3.14159265358979323846
 
 /***************************************************************************/ 
 /**************************** USER DEFINED *********************************/
@@ -75,6 +76,9 @@ typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT} user_params_t;
 #define GPE_FOR DIMERS // by default for bosonic dimers consisted of pair fermion-fermion
 #endif
 
+#ifndef UNITARY
+#define UNITARY
+#endif
 /**
  * Function returns value of energy density functional EDF
  * @param rho - density, computed according gpe_density(psi)
@@ -231,7 +235,7 @@ typedef enum {OMEGA_X, OMEGA_Y, OMEGA_Z, A_SCAT, A_DIP} user_params_t;
 #endif
 
 #ifndef DIPOLAR
-#define DIPOLAR // use this in C++ program and not in CUDA library
+#define DIPOLAR
 #endif
 
 #include <float.h> // for macro DBL_EPSILON
@@ -302,7 +306,6 @@ inline __device__  double gpe_vdd_k(double kx, double ky, double kz)
     
     if ( k_sq < DBL_EPSILON )
     {
-        //printf("kx: %e\tky: %e\tkz: %e\tDBL_EPSILON: %e\tk_sq: %e\n",kx,ky,kz,DBL_EPSILON,k_sq);
         return 0;
     }
     else
@@ -319,6 +322,20 @@ static inline void gpe_print_interactions_type()
 
 
 #endif // end choosing type
+
+
+
+
+
+
+
+/* ************************************************************************************************************************* *
+ *                                                                                                                           *
+ *                                             EXTERNAL POTENTIAL                                                            *
+ *                                                                                                                           *
+ * ************************************************************************************************************************* */
+
+
 
 
 

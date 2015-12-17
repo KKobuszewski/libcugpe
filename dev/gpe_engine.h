@@ -355,6 +355,7 @@ int gpe_evolve_vortex(int nt);
 
 
 #ifdef DIPOLAR
+
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with dipolar interactions specified by a_dip constant.
  * (a_dip
@@ -363,6 +364,26 @@ int gpe_evolve_vortex(int nt);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_evolve_dipolar(int nt);
+
+/**
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with dipolar interactions specified by a_dip constant.
+ * (a_dip
+ * NOTE: Assuming that a_dip is declared in d_user_params.
+ * @param nt number of steps to evolve [INPUT]
+ * @param chemical_potential chemical potential of a system in ITE
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_evolve_dipolar(int nt, double* chemical_potential);
+
+/**
+ * Function returns energy of dipolar interactions computed from wave function and Vdip operator.
+ * NOTE: Assuming that a_dip is declared in d_user_params.
+ * 
+ * @param t value of time [OUTPUT]
+ * @param edip expectation value of dipolar interactions energy [OUTPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_energy_dipolar(double *t, double *edip);
 #endif
 
 /**
