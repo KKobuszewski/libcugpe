@@ -45,7 +45,7 @@ CXX_LIBS  = -lcudart -lgomp -lpthread -lm
 
 # cuda compiler
 NVCC      = /usr/local/cuda-7.0/bin/nvcc
-NVCC_FLAGS= -m64 -O3 -arch $(GPU_ARCH) -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -Xcompiler -fPIC
+NVCC_FLAGS= -m64 -O3 $(GPU_ARCH) -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -Xcompiler -fPIC
 NVCC_INC  = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
 NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
 NVCC_LIBS = -lcudart -lcufft -lm
