@@ -43,7 +43,7 @@
 
 #include "gpe_engine.h"
 
-uint8_t flag_stop = 0;
+uint8_t flag_stop = 0;      // necessary to tell second thread when to staph
 
 typedef struct
 {
@@ -53,6 +53,9 @@ typedef struct
     cplx** data;
 } gpe_queue;
 
+// TODO: Add structure to pass by queue more data then cplx* !!! (for example energy)
+
+
 extern gpe_queue wf_queue;
 
 /*
@@ -61,7 +64,7 @@ extern gpe_queue wf_queue;
  * void* ret = create_gpe_queue(uint64_t nxyz);
  * if (!ret) psi = (cplx*) ret;
  */
-static inline void* create_gpe_queue(const uint64_t nxyz) 
+static inline void* create_gpe_queue(const uint64_t nxyz, uint16_t queue_size = 5) 
 {
     cudaError err;
     
@@ -70,15 +73,18 @@ static inline void* create_gpe_queue(const uint64_t nxyz)
     
     wf_queue.counter = 0;
     
-    uint16_t queue_max_size = 3;
-//     uint16_t queue_max_size = ( sysconf( _SC_PHYS_PAGES ) * sysconf( _SC_PAGE_SIZE ) )/( nxyz * sizeof(cplx) );
-//     queue_max_size = lround( ceil( 0.5*((double) queue_max_size) ) );
-//     if (queue_max_size < 1) { printf("Error: Wavefunction is to big to allocate in RAM!\n"); exit(EXIT_FAILURE); }
-    printf("Maximal sizeof queue: %u\n", queue_max_size);
-    wf_queue.max_size = queue_max_size;
+    // TODO: Make queue_max_size depenedent on available RAM size
+    //       uint16_t queue_max_size = ( sysconf( _SC_PHYS_PAGES ) * sysconf( _SC_PAGE_SIZE ) )/( nxyz * sizeof(cplx) );
+    uint16_t queue_max_size = 5;
+    if (queue_size > queue_max_size) { printf("Error: Queue buffer is too big! Truncating queue size to %d\n", queue_max_size); queue_size = queue_max_size; }
     
-    wf_queue.data = (cplx**) malloc( queue_max_size*sizeof(cplx*) );
-    for (uint16_t ii = 0; ii < queue_max_size; ii++) 
+    
+    printf("GPE Queue size (wavefunctions to be buffered at once): %u\n", queue_size);
+    wf_queue.max_size = queue_size;
+    
+    // ================ Allocate buffer for data ==========================================
+    wf_queue.data = (cplx**) malloc( queue_size*sizeof(cplx*) );
+    for (uint16_t ii = 0; ii < queue_size; ii++) 
     {
         err=cudaHostAlloc( &(wf_queue.data[ii]) , sizeof(cplx)*nxyz, cudaHostAllocDefault );
         if (err != cudaSuccess) 
@@ -125,6 +131,10 @@ static inline void destroy_gpe_queue()
             exit(EXIT_FAILURE);
         }
     }
+    // this condition is necessary to exit loop in second thread!
+    flag_stop = 1;
+    
+    // clear mem
     free(wf_queue.data);
 }
 

@@ -218,6 +218,12 @@ static inline void gpe_print_interactions_type()
 }
 
 
+
+
+
+// ============================= DIPOLAR INTERACTIONS SPECIFIC CASE ======================================
+
+
 #elif (INTERACTIONS == -2)
 
 /* ***************************************************************************************************** *
@@ -267,12 +273,6 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
     return 4*M_PI*a*rho; // unitary limit
 }
 
-
-
-
-// ============================= DIPOLAR INTERACTIONS SPECIFIC CASE ======================================
-
-
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // TODO: optimize contact interactions
 #define DIRAC_DELTA_TRANSFORM 0.06349363593424097  // 1/(2 pi)^3/2 - transform of Dirac delta in 3-d
@@ -292,12 +292,12 @@ inline __device__  double gpe_vint_k(double kx, double ky, double kz)
         return 0;
     else
     {
-        return 4.*M_PI*(a_dip*3.*kz/(kx*kx + ky*ky + kz*kz) - a_dip + a_con*DIRAC_DELTA_TRANSFORM); // TODO: Check if kz or kx is in numerator!!!
+        return 4.*M_PI*( a_dip*3.*kz*kz/(kx*kx + ky*ky + kz*kz) - a_dip + a_con*DIRAC_DELTA_TRANSFORM ); // TODO: Check if kz or kx is in numerator!!!
     }
 }
 
 /*
- * 
+ * NOTE: term 1/2 in energy density must be included in energy counting function
  */
 inline __device__  double gpe_vdd_k(double kx, double ky, double kz)
 {
@@ -310,7 +310,7 @@ inline __device__  double gpe_vdd_k(double kx, double ky, double kz)
     }
     else
     {
-        return 4.*M_PI*a_dip*(3.*kz/(kx*kx + ky*ky + kz*kz) - 1.); // TODO: Check if kz or kx is in numerator!!! 
+        return 4.*M_PI*a_dip*( 3.*kz*kz/k_sq - 1. ); //  -g_dd * ( 1 - 3*cos^2(\mu,k) )  NOTE: dipoles polarized in z direction! 
     }  
 }
 

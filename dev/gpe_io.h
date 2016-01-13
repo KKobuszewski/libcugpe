@@ -79,13 +79,13 @@ static inline void gpe_save_info(   char* dftc_filename,
     fprintf(info_file,"%d   # nx\n",nx);
     fprintf(info_file,"%d   # ny\n",ny);
     fprintf(info_file,"%d   # nz\n",nz);
-    fprintf(info_file,"%lf   # dt\n",dt);
+    fprintf(info_file,"%.15e   # dt\n",dt);
     fprintf(info_file,"%d   # nom\n",nom);
-    fprintf(info_file,"%lf   # a_scattering\n",scat_lenght);
-    fprintf(info_file,"%lf   # aspect_ratio\n",aspect_ratio);
-    fprintf(info_file,"%lf   # omega_x\n",omega_x);
-    fprintf(info_file,"%lf   # r0\n",r0);
-    fprintf(info_file,"%lf   # npart\n",npart);
+    fprintf(info_file,"%.15e   # a_scattering\n",scat_lenght);
+    fprintf(info_file,"%.15e   # aspect_ratio\n",aspect_ratio);
+    fprintf(info_file,"%.15e   # omega_x\n",omega_x);
+    fprintf(info_file,"%.15e   # r0\n",r0);
+    fprintf(info_file,"%.15e   # npart\n",npart);
     fclose(info_file);
 }
 

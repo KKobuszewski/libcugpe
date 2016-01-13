@@ -113,6 +113,10 @@ typedef struct
     _iy=i/nz;                               \
     _iz=i-_iy * nz;
 
+/*
+#define ixiyiz2ixyz(_ixyz,_ix,_iy,_iz)      \
+    _ixyz = _iz + nz*_iy + nz*ny*_ix;
+*/
 
 #define cuErrCheck(err)                                                                                 \
     {                                                                                                   \
@@ -208,7 +212,6 @@ extern gpe_mem_t gpe_mem;
  * @param *_nz size of mesh in z direction [OUTPUT]
  * */
 void gpe_get_lattice(int *_nx, int *_ny, int *_nz);
-
 
 /**
  * Function creates GPE engine.
@@ -343,7 +346,17 @@ int gpe_evolve(int nt);
  * @param nt number of steps to evolve [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
-int gpe_evolve_qf(int nt);
+//int gpe_evolve_qf(int nt);
+
+
+/**
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with option evolution by quantum friction potential.
+ * @param nt number of steps to evolve [INPUT]
+ * @param chemical_potential chemical potential of a system in ITE [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_evolve_qf(int nt, double* chemical_potential = NULL);
+
 
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex in ite.
