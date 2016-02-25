@@ -36,6 +36,9 @@
 
 #define M_PI 3.14159265358979323846
 
+
+
+
 /***************************************************************************/ 
 /**************************** USER DEFINED *********************************/
 /***************************************************************************/
@@ -257,7 +260,7 @@ inline __device__  double gpe_EDF(double rho, uint it)
 {
     const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
     // TODO: Change constant !!!
-    return 2*M_PI*a*rho*rho; // unitary limit
+    return 2*M_PI*a*rho*rho; // 1/2 g_dd |psi|^4
 }
 
 /**
@@ -269,7 +272,6 @@ inline __device__  double gpe_EDF(double rho, uint it)
 inline __device__  double gpe_dEDFdn(double rho, uint it)
 {
     const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
-    // TODO: Change constant !!!
     return 4*M_PI*a*rho; // unitary limit
 }
 
@@ -279,9 +281,8 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-/*
+/**
  * 
- */
 inline __device__  double gpe_vint_k(double kx, double ky, double kz)
 {
     const double a_con = d_user_param[A_SCAT];
@@ -295,8 +296,9 @@ inline __device__  double gpe_vint_k(double kx, double ky, double kz)
         return 4.*M_PI*( a_dip*3.*kz*kz/(kx*kx + ky*ky + kz*kz) - a_dip + a_con*DIRAC_DELTA_TRANSFORM ); // TODO: Check if kz or kx is in numerator!!!
     }
 }
+ */
 
-/*
+/**
  * NOTE: term 1/2 in energy density must be included in energy counting function
  */
 inline __device__  double gpe_vdd_k(double kx, double ky, double kz)

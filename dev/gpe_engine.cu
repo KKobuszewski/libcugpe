@@ -186,7 +186,7 @@ inline gpe_result_t gpe_reciprocal_lattice_init( double alpha, double beta)
     cuErrCheck( cudaMemcpyToSymbol(d_exp_kkz2_over_nxyz, carr, nz*sizeof(cuCplx)) ) ;
     free(carr);
     
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 /*
@@ -240,14 +240,14 @@ inline gpe_result_t gpe_reciprocal_lattice_change( double alpha, double beta)
     gpemalloc(carr,nz,cuCplx);
     for(ui=0; ui<nz; ui++)
     {
-        c1=cexp(c3*gpe_mem.kkz[ui]*gpe_mem.kkz[ui]/(GAMMA*GAMMA)) / (double)(nxyz); // NOTE: here we divide to 
+        c1=cexp(c3*gpe_mem.kkz[ui]*gpe_mem.kkz[ui]/(GAMMA*GAMMA)) / (double)(nxyz); // NOTE: here we divide to normalize CUFFT
         carr[ui].x=creal(c1); carr[ui].y=cimag(c1);
         //carr[ui] = (cuCplx) c1; // cuCplx and cplx should be binary-compatible
     }
     cuErrCheck( cudaMemcpyToSymbol(d_exp_kkz2_over_nxyz, carr, nz*sizeof(cuCplx)) ) ;
     free(carr);
     
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 
@@ -260,12 +260,14 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
     double r;
     gpe_result_t res;
     
+    check_particle_type();
     #ifndef GAMMA
         return -99; // not supported mode
     #endif
     
     // Set flags
     gpe_flags.vortex_set = 0;
+    gpe_flags.phase_set = 0;
     
     // Set number of blocks, if number of threads is given
     gpe_mem.threads=nthreads;
@@ -319,13 +321,14 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
     
     gpe_mem.d_wrk3R = NULL;
     gpe_mem.d_wrk3C = NULL;
+    gpe_mem.d_phase = NULL;
     
 #ifdef DIPOLAR
     // TODO: Check if it is not necessary!
     //cuErrCheck( cudaMalloc( &gpe_mem.d_dipolar_wrk, sizeof(cuCplx)*nxyz) );
 #endif
     
-    return GPE_SUCCES; // success
+    return GPE_SUCCESS; // success
 }
 
 int gpe_destroy_engine()
@@ -342,8 +345,9 @@ int gpe_destroy_engine()
     cuErrCheck( cudaFree(gpe_mem.d_psi2) );
     if(gpe_mem.d_wrk3R != NULL) cuErrCheck( cudaFree(gpe_mem.d_wrk3R) );
     if(gpe_mem.d_wrk3C != NULL) cuErrCheck( cudaFree(gpe_mem.d_wrk3C) );
+    if(gpe_mem.d_phase != NULL) cuErrCheck( cudaFree(gpe_mem.d_phase) );
     
-    return GPE_SUCCES; // success
+    return GPE_SUCCESS; // success
 }
 
 int gpe_change_alpha_beta(double alpha, double beta)
@@ -365,13 +369,13 @@ int gpe_change_alpha_beta(double alpha, double beta)
 int gpe_set_rte_evolution()
 {
     gpe_change_alpha_beta(1.0,0.0);
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 int gpe_set_ite_evolution()
 {
     gpe_change_alpha_beta(0.0,1.0);
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 int gpe_set_time(double t0)
@@ -474,6 +478,49 @@ __global__ void __gpe_imprint_vortexline_zdir_(cuCplx *psi)
     }
 }
 
+// ======================= More general enforcing phase =====================================================
+
+__global__ void __gpe_compute_phase__(cuCplx* psi, double* d_phase)
+{
+	size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+	if(ixyz<nxyz)
+    {
+        d_phase[ixyz] = cplxArg(psi[ixyz]);
+    }
+}
+
+int gpe_set_phase(double* h_phase)
+{
+	
+    if (gpe_mem.d_phase == NULL) cuErrCheck( cudaMalloc( &gpe_mem.d_phase, sizeof(double)*nxyz ) );
+    
+    cuErrCheck( cudaMemcpy( gpe_mem.d_phase, h_phase, sizeof(double)*nxyz, cudaMemcpyHostToDevice) ); 
+    gpe_flags.phase_set=1;
+    
+    return GPE_SUCCESS;
+}
+
+int gpe_get_phase(double* h_phase)
+{
+	
+    if (gpe_mem.d_phase == NULL) cuErrCheck( cudaMalloc( &gpe_mem.d_phase, sizeof(double)*nxyz ) );
+    
+    __gpe_compute_phase__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi,gpe_mem.d_phase);
+    if (h_phase) cuErrCheck( cudaMemcpy( h_phase, gpe_mem.d_phase, sizeof(double)*nxyz, cudaMemcpyDeviceToHost) );  // if h_phase != NULL copy phase to host
+    gpe_flags.phase_set=1;
+    
+    return GPE_SUCCESS;
+}
+
+__global__ void __gpe_enforce_phase__(cuCplx* psi, double* d_phase)
+{
+	size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+	if(ixyz<nxyz)
+    {
+        psi[ixyz] = cplxScale( cplxExpi(d_phase[ixyz]), cplxAbs(psi[ixyz]) );
+    }
+}
+
 // ======================= Density/Normalization ============================================================
 
 // TODO: Test speed with cublas
@@ -526,7 +573,7 @@ int gpe_normalize(cuCplx *psi, double *wrk)
     cuErrCheck( local_reduction(wrk, nxyz, wrk, gpe_mem.threads, 0) );
     __gpe_normalize__<<<gpe_mem.blocks, gpe_mem.threads>>>(psi, wrk);
     
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 int gpe_normalize_psi()
@@ -547,7 +594,7 @@ static inline int gpe_normalize_psi(double *chemical_potential)
         *chemical_potential = -.5*log(norm/gpe_mem.npart)/gpe_mem.dt;
     }
     
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 int gpe_get_density(double *t, double * density)
@@ -813,7 +860,7 @@ int gpe_compute_qf_potential(cuCplx *psi, cuCplx *wrk, double *qfpotential)
 int gpe_evolve(int nt)
 {
     printf("Function not implemented!\n");
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 /**
@@ -901,7 +948,7 @@ int gpe_evolve_qf(int nt, double* chemical_potential)
 }
 
 // TODO: Check if this works better!
-int gpe_evolve_vortex(int nt)
+int gpe_evolve_vortex(int nt, double* chemical_potential)
 {
     cufftResult cufft_result;
     int i;
@@ -976,13 +1023,113 @@ int gpe_evolve_vortex(int nt)
         {
             // normalize
             cuErrCheck( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz));
+            if (chemical_potential)
+            {
+                double norm;
+                cuErrCheck( cudaMemcpy( &norm, gpe_mem.d_wrk2R+nxyz, sizeof(double), cudaMemcpyDeviceToHost) ); 
+                *chemical_potential = -.5*log(norm/gpe_mem.npart)/gpe_mem.dt;
+            } 
         }
         
         gpe_mem.it = gpe_mem.it + 1;
     }
     
-    return 0;
+    return GPE_SUCCESS;
 }
+
+
+
+// TODO: Check if this works better!
+int gpe_evolve_enforced_phase(int nt, double* chemical_potential)
+{
+    cufftResult cufft_result;
+    int i;
+        
+    for(i=0; i<nt; i++)
+    {
+        // changing the phase
+        __gpe_enforce_phase__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi,gpe_mem.d_phase);
+        cuErrCheck( cudaGetLastError() );
+        
+        
+        if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+        {
+            cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R) );
+            __gpe_exp_Vstep1_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R, gpe_mem.d_wrk3R);
+        }
+        else
+        {
+            // potential part exp(V/2)
+            __gpe_exp_Vstep1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        if(gpe_mem.beta==0.0 && gpe_mem.qfcoeff==0.0)
+        {
+            // without normalization
+            __gpe_exp_Vstep2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+        }
+        else
+        {
+            __gpe_exp_Vstep2_part1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+            
+            if(gpe_mem.beta!=0.0)
+            {
+                // with normalization between
+                cuErrCheck( gpe_normalize(gpe_mem.d_psi2, gpe_mem.d_wrk2R+nxyz));
+                
+                // changing the phase
+                __gpe_enforce_phase__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi,gpe_mem.d_phase);
+                cuErrCheck( cudaGetLastError() );
+            }
+            
+            if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+            {
+                cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R));
+                __gpe_exp_Vstep2_part2_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2, gpe_mem.d_wrk3R);
+            }
+            else
+            {
+                __gpe_exp_Vstep2_part2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+            }
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        __gpe_exp_Vstep3_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+        
+        if(gpe_mem.beta!=0.0)
+        {
+            // normalize
+            cuErrCheck( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz));
+            if (chemical_potential)
+            {
+                double norm;
+                cuErrCheck( cudaMemcpy( &norm, gpe_mem.d_wrk2R+nxyz, sizeof(double), cudaMemcpyDeviceToHost) ); 
+                *chemical_potential = -.5*log(norm/gpe_mem.npart)/gpe_mem.dt;
+            } 
+        }
+        
+        gpe_mem.it = gpe_mem.it + 1;
+    }
+    
+    return GPE_SUCCESS;
+}
+
+
 
 
 // ========================= Energy counting =================================================
@@ -1123,7 +1270,7 @@ __global__ void __gpe_multiply_by_kz__(cuCplx *psi_in, cuCplx *psi_out)
     }    
 }
 
-int gpe_get_currents(double *t, double * jx, double * jy, double * jz)
+int gpe_get_currents(double* t, double* jx, double* jy, double* jz)
 {
     int ierr;
     
@@ -1169,8 +1316,8 @@ int gpe_get_currents(double *t, double * jx, double * jy, double * jz)
         cuErrCheck( cudaFree(gpe_mem.d_wrk3R) );  
         gpe_mem.d_wrk3R = NULL;      
     }
-        
-    return GPE_SUCCES;
+    
+    return GPE_SUCCESS;
 }
 
 
@@ -1212,7 +1359,7 @@ __global__ void __gpe_comupute_vint_k__(cuCplx* density_k, cuCplx* vint_k_out)
     }
 }
 
-/*
+/**
  * This function computes total internal interactions propagator's exponent
  * 
  * Uses Fourier transform of density and multiplies it by Fourier transform of particle-particle interaction potential.
@@ -1504,7 +1651,7 @@ int gpe_energy_dipolar(double *t, double *edip)
     
     *edip *= .5; // term 1/2 before energy density (summing by pairs of particles)
     
-    return GPE_SUCCES;
+    return GPE_SUCCESS;
 }
 
 

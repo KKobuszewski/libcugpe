@@ -43,7 +43,9 @@
 
 #include "gpe_engine.h"
 
-
+#ifndef GPE_FOR
+#define GAMMA -9999
+#endif
 #if GPE_FOR == PARTICLES
 #define GAMMA 1.0
 #elif GPE_FOR == DIMERS
@@ -54,8 +56,19 @@
 #define nx NX
 #define ny NY
 #define nz NZ
-#define nxyz (nx*ny*nz)
+#define nxyz (NX*NY*NZ)
 
 #define GPE_QF_EPSILON 1.0e-12
+
+
+
+static inline void check_particle_type()
+{
+	if (GPE_FOR == PARTICLES) printf("# GPE FOR PARTICLES\n");
+	if (GPE_FOR == DIMERS   ) printf("# GPE FOR DIMERS\n");
+	
+	printf("GAMMA: %.2f\n\n",GAMMA);
+}
+
 
 #endif

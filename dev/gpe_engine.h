@@ -76,6 +76,7 @@ typedef struct
     cuCplx * d_wrk2; // additional work space - device
     cuCplx * d_psi; // wave function - device
     cuCplx * d_psi2; // copy of wave function - device
+    double * d_phase; // additional array for storing phase of psi to be 
     double * d_wrk2R; // d_wrk2R = (double *) d_wrk2; - for convinience
     double * d_wrk3R; // for quantum friction computation
     cuCplx * d_wrk3C; // for quantum friction computation
@@ -96,6 +97,7 @@ typedef struct
 typedef struct
 {
     uint8_t vortex_set;
+    uint8_t phase_set;
 } gpe_flags_t;
 
 
@@ -113,10 +115,10 @@ typedef struct
     _iy=i/nz;                               \
     _iz=i-_iy * nz;
 
-/*
-#define ixiyiz2ixyz(_ixyz,_ix,_iy,_iz)      \
-    _ixyz = _iz + nz*_iy + nz*ny*_ix;
-*/
+
+
+#define ixiyiz2ixyz(_ixyz,_ix,_iy,_iz, ny, nz)      \
+    _ixyz = _iz + nz*_iy + nz*ny*_ix
 
 #define cuErrCheck(err)                                                                                 \
     {                                                                                                   \
@@ -167,7 +169,7 @@ typedef struct
  *                                                                                      *
  * ************************************************************************************ */
 // TODO: Define all exit/error codes for gpe (including errors of CUFFT and CUBLAS)!
-#define GPE_SUCCES 0
+#define GPE_SUCCESS 0
 /*
 // list of possible cufft errors
         if (cufft_res == CUFFT_INVALID_PLAN) {printf("CUFFT_INVALID_PLAN\n");}
@@ -245,7 +247,7 @@ int gpe_set_rte_evolution();
  * Function sets evolution to imaginary time one (enables finding ground state of wavefunction).
  * @return It returns 0 if success otherwise error code is returned.
  * */
-int gpe_set_rte_evolution();
+int gpe_set_ite_evolution();
 
 
 /**
@@ -284,6 +286,20 @@ int gpe_set_quantum_friction_coeff(double qfcoeff);
  */
 int gpe_set_vortex(const double vortex_x0, const double vortex_y0, const int8_t Q = 1);
 
+/**
+ * Function evaluates phase of wavefunction for specified time i.e. \f$\Psi(t)\f$ and save in additional array on the device.
+ * If given pointer to host array also copies phase to host.
+ * @param h_phase pointer to an array to store phase on host or NULL (by default) [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_get_phase(double* h_phase = NULL);
+
+/**
+ * Function fills additional array on device for storing phase of wavefunctio with given host array.
+ * @param h_phase pointer to an array to store phase on host or NULL (by default) [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_set_phase(double* h_phase);
 
 /**
  * Function sets wave function for specified time i.e. \f$\Psi(t)\f$
@@ -344,14 +360,6 @@ int gpe_evolve(int nt);
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with option evolution by quantum friction potential.
  * @param nt number of steps to evolve [INPUT]
- * @return It returns 0 if success otherwise error code is returned.
- * */
-//int gpe_evolve_qf(int nt);
-
-
-/**
- * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with option evolution by quantum friction potential.
- * @param nt number of steps to evolve [INPUT]
  * @param chemical_potential chemical potential of a system in ITE [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
@@ -359,13 +367,21 @@ int gpe_evolve_qf(int nt, double* chemical_potential = NULL);
 
 
 /**
- * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex in ite.
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex (in ite).
  * NOTE: Assuming that function gpe_set_vortex has already been used.
  * @param nt number of steps to evolve [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
-int gpe_evolve_vortex(int nt);
+int gpe_evolve_vortex(int nt, double* chemical_potential = NULL);
 
+
+/**
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with given phase (in ite).
+ * NOTE: Assuming that function gpe_set_phase or gpe_get_phase has already been used.
+ * @param nt number of steps to evolve [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_evolve_enforced_phase(int nt, double* chemical_potential = NULL);
 
 #ifdef DIPOLAR
 

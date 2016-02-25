@@ -58,7 +58,7 @@ typedef struct
 
 extern gpe_queue wf_queue;
 
-/*
+/**
  * Use it in this way:
  * cplx* psi = NULL;
  * void* ret = create_gpe_queue(uint64_t nxyz);
@@ -74,7 +74,7 @@ static inline void* create_gpe_queue(const uint64_t nxyz, uint16_t queue_size = 
     wf_queue.counter = 0;
     
     // TODO: Make queue_max_size depenedent on available RAM size
-    //       uint16_t queue_max_size = ( sysconf( _SC_PHYS_PAGES ) * sysconf( _SC_PAGE_SIZE ) )/( nxyz * sizeof(cplx) );
+    //       uint16_t queue_max_size = ( sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE) )/( nxyz * sizeof(cplx) );
     uint16_t queue_max_size = 5;
     if (queue_size > queue_max_size) { printf("Error: Queue buffer is too big! Truncating queue size to %d\n", queue_max_size); queue_size = queue_max_size; }
     
@@ -108,7 +108,7 @@ static inline cplx* get_gpe_queue_buffer()
 static inline void add_to_gpe_queue(cplx* psi) 
 {
      // checks if it is possible to add next element to
-    while(1) { if (wf_queue.q.size() < wf_queue.max_size) {wf_queue.q.push(psi); break;} }
+    while(1) { if (wf_queue.q.size()+1 < (wf_queue.max_size)) {wf_queue.q.push(psi); break;} }
     wf_queue.counter++;
 }
 
