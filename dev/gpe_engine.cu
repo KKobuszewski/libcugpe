@@ -464,17 +464,17 @@ __global__ void __gpe_imprint_vortexline_zdir_(cuCplx *psi)
         
         _x = constgpu(ix) - 1.0*(NX/2) - d_vortex_x0;
         _y = constgpu(iy) - 1.0*(NY/2) - d_vortex_y0;
-        //_iz = constgpu(iz) - 1.0*(NZ/2);
         
-        //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y);
-        abs_psi = hypot(lpsi.x, lpsi.y);
-        phase = atan2(_x,_y); // atan2(0,0) == -pi/2
-        phase *= (double) (d_vortex_Q);
-        //if (d_vortex_Q != 1) phase *= (double) (d_vortex_Q);
-        lpsi.x = abs_psi*cos(phase);
-        lpsi.y = abs_psi*sin(phase);
-        
-        psi[ixyz] = lpsi;
+        abs_psi = hypot(lpsi.x, lpsi.y); //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y); (intrinsic should be faster)
+        if (abs_psi > 1e-15)
+        {
+            phase = atan2(_x,_y); // atan2(0,0) == -pi/2
+            phase *= (double) (d_vortex_Q); //if (d_vortex_Q != 1) phase *= (double) (d_vortex_Q);
+            lpsi.x = abs_psi*cos(phase);
+            lpsi.y = abs_psi*sin(phase);
+            
+            psi[ixyz] = lpsi;
+	    }
     }
 }
 
