@@ -45,8 +45,13 @@
 
 /**
  * GPE_FOR can be either PARTICLES or DIMERS. If PARTICLES then \f$\kappa=1\f$, if DIMERS then \f$\kappa=2\f$
+ * 
+ * Create your own type of density functionals in parenthesis: 
+ * #if (INTERACTIONS == <number>) 
+ * ... 
+ * #endif
+ * 
  * */
-// #define GPE_FOR PARTICLES
 
 
 

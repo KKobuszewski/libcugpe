@@ -43,7 +43,7 @@
 #include "gpe_engine.h"
 
 
-extern int nx, ny, nz, nxyz;
+extern int nx, ny, nz, nxyz; // TODO: check if define nx,ny,nz in a library are not used <- or maybe should use this?
 
 /***************************************************************************/ 
 /*************************** CLOUD PARAMETERS ******************************/
@@ -53,18 +53,26 @@ extern int nx, ny, nz, nxyz;
 static inline double cabs_pow2(double complex z)                              { return creal(z)*creal(z) + cimag(z)*cimag(z); }
 static inline bool compare_cplx_density(double complex z1, double complex z2) { return cabs_pow2(z1)<cabs_pow2(z2); }
 
+/**
+ * Finds density of wavefunction in lattice point [nx/2,ny/2,nz/2] (centre of a lattice).
+ * Assuming wavefunction is stored in array copied to host.
+ */
 static inline double find_n0(double complex* psi)
 {
 	int index = 0;
 	ixiyiz2ixyz(index,nx/2,ny/2,nz/2,ny,nz);
 	double complex psi0 = psi[index];
-	return cabs_pow2(psi0);
+	return GAMMA*cabs_pow2(psi0);
 }
 
+/**
+ * Finds maximal density of wavefunction.
+ * Assuming wavefunction is stored in array copied to host.
+ */
 static inline double find_max_density(double complex* psi)
 {
 	// TODO: Change it to OpenMP. http://stackoverflow.com/questions/11242439/finding-minimal-element-in-array-and-its-index
-	return cabs_pow2(*std::max_element(psi,psi+nxyz,compare_cplx_density));
+	return GAMMA*cabs_pow2(*std::max_element(psi,psi+nxyz,compare_cplx_density));
 }
 
 
@@ -75,7 +83,7 @@ static inline double cloud_range_ix(double complex* psi, const double epsilon = 
 	for ( int ix = nx/2; ix > 0; ix-- )
 	{
 		ixiyiz2ixyz(index,ix,ny/2,nz/2,ny,nz);
-		density = cabs_pow2(psi[index]);
+		density = GAMMA*cabs_pow2(psi[index]);
 		
 		if (density < epsilon) return (nx/2 - ix);
 	}
@@ -89,7 +97,7 @@ static inline double cloud_range_iy(double complex* psi, const double epsilon = 
 	for ( int iy = ny/2; iy > 0; iy-- )
 	{
 		ixiyiz2ixyz(index,nx/2,iy,nz/2,ny,nz);
-		density = cabs_pow2(psi[index]);
+		density = GAMMA*cabs_pow2(psi[index]);
 		
 		if (density < epsilon) return (ny/2 - iy);
 	}
@@ -103,7 +111,7 @@ inline double cloud_range_iz(double complex* psi, const double epsilon = 1e-08)
 	for ( int iz = nz/2; iz > 0; iz-- )
 	{
 		ixiyiz2ixyz(index,nx/2,ny/2,iz,ny,nz);
-		density = cabs_pow2(psi[index]);
+		density = GAMMA*cabs_pow2(psi[index]);
 		
 		if (density < epsilon) return (nz/2 - iz);
 	}

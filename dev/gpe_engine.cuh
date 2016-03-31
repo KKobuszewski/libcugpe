@@ -43,14 +43,6 @@
 
 #include "gpe_engine.h"
 
-#ifndef GPE_FOR
-#define GAMMA -9999
-#endif
-#if GPE_FOR == PARTICLES
-#define GAMMA 1.0
-#elif GPE_FOR == DIMERS
-#define GAMMA 2.0
-#endif
 
 // TODO: think if this could be in constant memory!
 #define nx NX
