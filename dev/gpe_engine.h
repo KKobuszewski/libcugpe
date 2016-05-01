@@ -376,11 +376,32 @@ int gpe_evolve_qf(int nt, double* chemical_potential = NULL);
 
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex (in ite).
+ * Simplest enforcing vortex phase with with method in both predictor and normal steps.
  * NOTE: Assuming that function gpe_set_vortex has already been used.
  * @param nt number of steps to evolve [INPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_evolve_vortex(int nt, double* chemical_potential = NULL);
+
+
+/**
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex (in ite).
+ * Enforces vortex phase with second method.
+ * NOTE: Assuming that function gpe_set_vortex has already been used.
+ * @param nt number of steps to evolve [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_evolve_vortex2(int nt, double* chemical_potential = NULL);
+
+
+/**
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with imprinting vortex (in ite).
+ * Enforces vortex phase only in predictor step (first method).
+ * NOTE: Assuming that function gpe_set_vortex has already been used.
+ * @param nt number of steps to evolve [INPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_evolve_vortex3(int nt, double* chemical_potential = NULL);
 
 
 /**

@@ -27,6 +27,7 @@
  * @brief cuGPE library - user defined functions
  * */
 #include <cuComplex.h>
+#include <float.h>
 
 #ifndef __GPE_USER_DEFINED__
 #define __GPE_USER_DEFINED__
@@ -121,7 +122,7 @@ static inline void gpe_print_interactions_type()
 
 /* ***************************************************************************************************** *
  *                                                                                                       *
- *                                BEC REGIME DENSITY FUNCTIONAL                                          *
+ *                                ETF BEC REGIME DENSITY FUNCTIONAL                                      *
  *                                                                                                       *
  * ***************************************************************************************************** */
 
@@ -149,7 +150,8 @@ inline __device__  double gpe_EDF(double rho, uint it)
     const double a = d_user_param[A_SCAT]; // scattering length
     const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
     const double eF=0.5*kF*kF;
-    const double x=1.0/(a*kF);
+    //const double x  = 1.0/(a*kF);
+    const double x  = (kF > DBL_MIN) ? 1.0/(a*kF) : DBL_MAX;
     return 0.6*eF*rho*XI*(XI+x) / ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x ) - rho/(2.0*a*a);
 }
 
@@ -163,12 +165,32 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
 {
     // Density energy functional for fermionic cold atoms
     // see: Phys. Rev. Lett. 112, 025301 (2014)
+    //const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
+    //const double kF= pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
+    //const double eF= 0.5*kF*kF;
+    //const double x = 1.0/(a*kF);
+    //const double D = ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x);
+    //return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
+    
+    // Density energy functional for fermionic cold atoms
+    // see: Phys. Rev. Lett. 112, 025301 (2014)
+    
     const double a = d_user_param[A_SCAT]; // scattering length passed via user params array
-    const double kF=pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
-    const double eF=0.5*kF*kF;
-    const double x=1.0/(a*kF);
-    const double D = ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x);
-    return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
+    
+    if (rho > 1e-15)
+    {
+        
+        const double kF = pow(3.0*M_PI*M_PI*rho , 1.0/3.0);
+        const double eF = 0.5*kF*kF;
+        //const double x  = 1.0/(a*kF);  
+        const double x  = (kF > DBL_MIN) ? 1.0/(a*kF) : DBL_MAX;
+        const double D = ( XI + x*(1.0+CONTACT) + 3.0*M_PI*XI*x*x);
+        return XI*eF*(XI+0.8*x)/D + 0.2*XI*eF*(XI+x)*x*( (1.0+CONTACT)+6.0*M_PI*XI*x )/(D*D) - 1.0/(2.0*a*a);
+    }
+    else
+    {
+        return - 1.0/(2.0*a*a);
+    }
 }
 
 static inline void gpe_print_interactions_type()

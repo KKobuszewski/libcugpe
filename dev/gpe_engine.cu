@@ -466,6 +466,41 @@ __global__ void __gpe_imprint_vortexline_zdir_(cuCplx *psi)
         _y = constgpu(iy) - 1.0*(NY/2) - d_vortex_y0;
         
         abs_psi = hypot(lpsi.x, lpsi.y); //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y); (intrinsic should be faster)
+        phase = atan2(_x,_y); // atan2(0,0) == -pi/2
+        phase *= (double) (d_vortex_Q); //if (d_vortex_Q != 1) phase *= (double) (d_vortex_Q);
+        lpsi.x = abs_psi*cos(phase);
+        lpsi.y = abs_psi*sin(phase);
+        
+        psi[ixyz] = lpsi;
+	    
+    }
+}
+
+/*
+ * This function imprints vortex parallel to z axis crossing x,y plane in (x0,y0) point
+ * double d_vortex_x0, d_vortex_y0 - position of vortex in xy plane
+ * uint8_t d_Q_vortex - topological charge of vortex
+ * NOTE: It is considered that x0 and y0 should be chosen out of lattice points in case 
+ *       phase is corectly (mathematically) defined in every lattice point (check atan2).
+ */
+__global__ void __gpe_imprint2_vortexline_zdir_(cuCplx *psi)
+{
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    uint ix, iy, iz, i;
+    
+    // registers
+    cuCplx lpsi = psi[ixyz];
+    double abs_psi, phase;
+    double _x,_y;
+    
+    if(ixyz<nxyz)
+    {
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
+        
+        _x = constgpu(ix) - 1.0*(NX/2) - d_vortex_x0;
+        _y = constgpu(iy) - 1.0*(NY/2) - d_vortex_y0;
+        
+        abs_psi = hypot(lpsi.x, lpsi.y); //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y); (intrinsic should be faster)
         if (abs_psi > 1e-15)
         {
             phase = atan2(_x,_y); // atan2(0,0) == -pi/2
@@ -947,7 +982,10 @@ int gpe_evolve_qf(int nt, double* chemical_potential)
     return 0;
 }
 
-// TODO: Check if this works better!
+
+/**
+ * Simplest enforcing vortex phase with with method in both predictor and normal steps.
+ */
 int gpe_evolve_vortex(int nt, double* chemical_potential)
 {
     cufftResult cufft_result;
@@ -1037,6 +1075,189 @@ int gpe_evolve_vortex(int nt, double* chemical_potential)
     return GPE_SUCCESS;
 }
 
+/**
+ * Enforces vortex phase with second method.
+ */
+int gpe_evolve_vortex2(int nt, double* chemical_potential)
+{
+    cufftResult cufft_result;
+    int i;
+        
+    for(i=0; i<nt; i++)
+    {
+        // changing the phase
+        __gpe_imprint2_vortexline_zdir_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi);
+        cuErrCheck( cudaGetLastError() );
+        
+        
+        if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+        {
+            cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R) );
+            __gpe_exp_Vstep1_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R, gpe_mem.d_wrk3R);
+        }
+        else
+        {
+            // potential part exp(V/2)
+            __gpe_exp_Vstep1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        if(gpe_mem.beta==0.0 && gpe_mem.qfcoeff==0.0)
+        {
+            // without normalization
+            __gpe_exp_Vstep2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+        }
+        else
+        {
+            __gpe_exp_Vstep2_part1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+            
+            if(gpe_mem.beta!=0.0)
+            {
+                // with normalization between
+                cuErrCheck( gpe_normalize(gpe_mem.d_psi2, gpe_mem.d_wrk2R+nxyz));
+                
+                // changing the phase
+                __gpe_imprint2_vortexline_zdir_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi);
+                cuErrCheck( cudaGetLastError() );
+            }
+            
+            if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+            {
+                cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R));
+                __gpe_exp_Vstep2_part2_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2, gpe_mem.d_wrk3R);
+            }
+            else
+            {
+                __gpe_exp_Vstep2_part2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+            }
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        __gpe_exp_Vstep3_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+        
+        if(gpe_mem.beta!=0.0)
+        {
+            // normalize
+            cuErrCheck( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz));
+            if (chemical_potential)
+            {
+                double norm;
+                cuErrCheck( cudaMemcpy( &norm, gpe_mem.d_wrk2R+nxyz, sizeof(double), cudaMemcpyDeviceToHost) ); 
+                *chemical_potential = -.5*log(norm/gpe_mem.npart)/gpe_mem.dt;
+            } 
+        }
+        
+        gpe_mem.it = gpe_mem.it + 1;
+    }
+    
+    return GPE_SUCCESS;
+}
+
+/**
+ * Enforces vortex phase only in predictor step (first method).
+ */
+int gpe_evolve_vortex3(int nt, double* chemical_potential)
+{
+    cufftResult cufft_result;
+    int i;
+        
+    for(i=0; i<nt; i++)
+    {
+        // changing the phase
+        __gpe_imprint_vortexline_zdir_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi);
+        cuErrCheck( cudaGetLastError() );
+        
+        
+        if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+        {
+            cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R) );
+            __gpe_exp_Vstep1_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R, gpe_mem.d_wrk3R);
+        }
+        else
+        {
+            // potential part exp(V/2)
+            __gpe_exp_Vstep1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        if(gpe_mem.beta==0.0 && gpe_mem.qfcoeff==0.0)
+        {
+            // without normalization
+            __gpe_exp_Vstep2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+        }
+        else
+        {
+            __gpe_exp_Vstep2_part1_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
+            
+            if(gpe_mem.beta!=0.0)
+            {
+                // with normalization between
+                cuErrCheck( gpe_normalize(gpe_mem.d_psi2, gpe_mem.d_wrk2R+nxyz));
+                
+                // changing the phase
+                //__gpe_imprint_vortexline_zdir_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi);
+                //cuErrCheck( cudaGetLastError() );
+            }
+            
+            if(gpe_mem.qfcoeff!=0.0) // quantum friction is active
+            {
+                cuErrCheck( gpe_compute_qf_potential(gpe_mem.d_psi, gpe_mem.d_wrk3C, gpe_mem.d_wrk3R));
+                __gpe_exp_Vstep2_part2_qf_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2, gpe_mem.d_wrk3R);
+            }
+            else
+            {
+                __gpe_exp_Vstep2_part2_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi2, gpe_mem.d_psi, gpe_mem.d_wrk2R, gpe_mem.d_psi2);
+            }
+        }
+        
+        // kinetic part exp(T)
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi);
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        // potential part exp(V/2)
+        __gpe_exp_Vstep3_<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+        
+        if(gpe_mem.beta!=0.0)
+        {
+            // normalize
+            cuErrCheck( gpe_normalize(gpe_mem.d_psi, gpe_mem.d_wrk2R+nxyz));
+            if (chemical_potential)
+            {
+                double norm;
+                cuErrCheck( cudaMemcpy( &norm, gpe_mem.d_wrk2R+nxyz, sizeof(double), cudaMemcpyDeviceToHost) ); 
+                *chemical_potential = -.5*log(norm/gpe_mem.npart)/gpe_mem.dt;
+            } 
+        }
+        
+        gpe_mem.it = gpe_mem.it + 1;
+    }
+    
+    return GPE_SUCCESS;
+}
 
 
 // TODO: Check if this works better!

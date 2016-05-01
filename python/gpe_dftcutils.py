@@ -1,5 +1,6 @@
 from __future__ import print_function
 from read_dftc_info import read_dftc_info
+from read_dftc_info import get_particles_type
 
 # math
 import numpy as np
@@ -16,7 +17,8 @@ import re
 SOME RULES:
 
 1. Always use path to .dftc file (not for other files in this directory)
-2. Data are given in oscilatory units (except psi)
+2. Data are given in oscilatory units (also density of particles!)
+
 """
 
 
@@ -26,28 +28,33 @@ SOME RULES:
 #
 ############################
 
-def get_data(datafile,measure_it=0):
+def get_data(datafile,measure_it=0,show=False):
     
-    print('loading file {} ...'.format(datafile))
+    if show:
+        print('# loading file {} ...'.format(datafile))
     Nx,Ny,Nz,dt,nom,a_scat,aspect,omega_x,r0,npart,time_tot = read_dftc_info(datafile)
     a_ho = 1./math.sqrt(omega_x)
     
+    # get particles type
+    gamma = 1.
+    if 'fermions' in get_particles_type(datafile):
+        gamma = 2.
     
     data = np.memmap(datafile,dtype=np.complex128)
     if (len(data) == nom*Nx*Ny*Nz):
-        print('# lenght of array consistent.\t\tnom*Nx*Ny*Nz =',nom*Nx*Ny*Nz,'\tarray shape:',data.shape)
+        """print('# lenght of array consistent.\t\tnom*Nx*Ny*Nz =',nom*Nx*Ny*Nz,'\tarray shape:',data.shape)"""
+        pass
     else:
         print('# ERROR: lenght of array incosistent.\tnom*Nx*Ny*Nz =',nom*Nx*Ny*Nz,'\tarray shape:',data.shape)
     data = np.reshape(data,[nom,Nx,Ny,Nz])
-    density = np.abs(data[measure_it,:,:,:])**2
+    density = gamma * np.abs(data[measure_it,:,:,:])**2 * a_ho**3
     phase   = np.angle(data[measure_it,:,:,:])
-    print('data shape:',density.shape)
     
     return density, phase
 
 def get_data_all(datafile):
     
-    print('loading file {} ...'.format(datafile))
+    print('# loading file {} ...'.format(datafile))
     Nx,Ny,Nz,dt,nom,a_scat,aspect,omega_x,r0,npart,time_tot = read_dftc_info(datafile)
     a_ho = 1./math.sqrt(omega_x)
     
@@ -68,7 +75,7 @@ def get_data_all(datafile):
 # TODO: Some more processing for trajectory needed -> return array indexed by time
 def get_trajectory(datafile,show=False):
     trajectory_file = datafile+'.trajectory'
-    print('loading file {} ...'.format(trajectory_file))
+    print('# loading file {} ...'.format(trajectory_file))
     data = np.loadtxt(trajectory_file,skiprows=1)
     
     if show is True:
@@ -79,28 +86,56 @@ def get_trajectory(datafile,show=False):
     return data[:,0],data[:,1],data[:,2],data[:,3]
 
 def trajectory_in_xy(T,X,Y,Z,slice_z):
-	t = T[np.where(Z == slice_z)]
-	x = X[np.where(Z == slice_z)]
-	y = Y[np.where(Z == slice_z)]
-	
-	return t,x,y
+    t = T[np.where(Z == slice_z)]
+    x = X[np.where(Z == slice_z)]
+    y = Y[np.where(Z == slice_z)]
+    
+    return t,x,y
 
 def trajectory_at_t(T,X,Y,Z,slice_t):
-	x = X[np.where(T == slice_t)]
-	y = Y[np.where(T == slice_t)]
-	z = T[np.where(T == slice_t)]
-	
-	return x,y,z
+    x = X[np.where(T == slice_t)]
+    y = Y[np.where(T == slice_t)]
+    z = T[np.where(T == slice_t)]
+    
+    return x,y,z
 
-def get_energy(datafile,mode='ite'):
+def get_energy(datafile,mode=None):
+    """
+    This functions enables reading .dftc.energy files.
+    
+    @param datafile     - name of file to be read (.dftc and not .dftc.energy)
+    @return             - dictionary with data in different columns of datafile
+    
+    """
+    
+    # mode and file name
+    if ('_rte' in datafile) and (mode is None):
+	    mode = 'rte'
+    elif mode is None:
+        mode = 'ite'
     datafile = datafile+'.energy'
-    print('loading file {} ...'.format(datafile))
+    
+    # load data
+    print('# loading file {} ...'.format(datafile),'\t\t( mode:',mode,')')
     data = np.loadtxt(datafile,skiprows=1)
     
     if (mode == 'ite'):
-        return data[:,0],data[:,1],data[:,2],data[:,3],data[:,4],data[:,5]
+        return {'time':data[:,0],
+                'etot':data[:,1],
+                'ekin':data[:,2],
+                'eint':data[:,3],
+                'eext':data[:,4],
+                'chem':data[:,5],
+                'diff':data[:,6]}
     if (mode == 'rte'):
-        pass #return data[:,0],data[:,1],data[:,2],data[:,3],data[:,4],data[:,5]
+        return {'time':data[:,0],
+                'etot':data[:,1],
+                'ekin':data[:,2],
+                'eint':data[:,3],
+                'eext':data[:,4],
+                'comp':data[:,5]}
+    pass
+
 
 ###########################################################################################################
 #
@@ -133,12 +168,18 @@ def create_grid(Nx=8,Ny=8,Nz=8,scale=1.):
     
     return x,y,z
 
-def create_meshgrid(Nx=8,Ny=8,Nz=8,scale=1.):
+def create_meshgrid(Nx=8,Ny=8,Nz=0,scale=1.):
     x,y,z = create_grid(Nx=Nx,Ny=Ny,Nz=Nz,scale=scale)
     
-    if (Nz == 0):
+    if   (Nz == 0):
         X,Y = np.meshgrid(x,y, indexing='ij')
         return X,Y
+    elif (Ny == 0):
+        X,Z = np.meshgrid(x,z, indexing='ij')
+        return X,Z
+    elif (Nx == 0):
+        Y,Z = np.meshgrid(y,z, indexing='ij')
+        return Y,Z
     else:
         X,Y,Z = np.meshgrid(x,y,z, indexing='ij')
         return X,Y,Z

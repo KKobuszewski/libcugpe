@@ -26,13 +26,16 @@ def read_dftc_info(infofile,show=False):
         Nz = int(re.findall(r'\d+', info[2])[0])
         dt = float(rx.findall(info[3])[0])
         nom = int(re.findall(r'\d+', info[4])[0])
-        a_scat = float(rx.findall(info[5])[0])
+        if ('inf' in info[5]):
+            a_scat = float('inf')
+        else:
+            a_scat = float(rx.findall(info[5])[0])
         aspect = float(rx.findall(info[6])[0])
         omega_x = float(rx.findall(info[7])[0])
         r0 = float(rx.findall(info[8])[0])
         npart = float(rx.findall(info[9])[0])
-        if (len(info) > 9):
-            time_tot = float(rx.findall(info[9])[0])
+        if (len(info) > 10):
+            time_tot = float(rx.findall(info[10])[0])
     
     if (show is True):
         print('lattice:\t',Nx,'x',Ny,'x',Nz)
@@ -46,6 +49,13 @@ def read_dftc_info(infofile,show=False):
     
     return Nx,Ny,Nz,dt,nom,a_scat,aspect,omega_x,r0,npart,time_tot
 
+def get_particles_type(infofile,show=False):
+    infofile=infofile+'.info'
+    with open(infofile,'r') as f:
+        info = f.readlines()
+        if (show is True) :
+            print('particle type:',info[0])
+    return info[0]
 
 if __name__ == '__main__':
     # execute only if run as a script
