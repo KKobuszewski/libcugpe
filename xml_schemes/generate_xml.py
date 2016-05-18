@@ -2,7 +2,7 @@ from __future__ import print_function
 from lxml import etree
 import StringIO
 
-import sys.path
+import sys
 sys.path.append('/home/konrad/CProjects/libcugpe/python')
 from gpe_datautils import gpeXmlRaport
 
