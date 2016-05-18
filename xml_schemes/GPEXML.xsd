@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+        <xs:include schemaLocation="http://xml.comp-phys.org/parameter.xsd"/>
+        <xs:element name="ARCHIVE">
+		<xs:complexType>
+			<xs:all minOccurs="0" maxOccurs="unbounded">
+				<xs:element ref="SIMULATION"/>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+        <xs:element name="SIMULATION">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element ref="PARAMETERS" type="ParameterType" minOccurs="0" maxOccurs="unbounded"/>
+				<xs:element ref="ENERGIES" type="ParameterType" minOccurs="0" maxOccurs="unbounded"/>
+				<xs:element ref="CLOUD_PARAMS" type="ParameterType" minOccurs="0" maxOccurs="unbounded"/>
+				<xs:element ref="VORTEX_PARAMS" type="ParameterType" minOccurs="0" maxOccurs="unbounded"/>
+                                <xs:element ref="IMAGES" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

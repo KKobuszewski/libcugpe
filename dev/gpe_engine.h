@@ -128,75 +128,144 @@ typedef struct
 #define ixiyiz2ixyz(_ixyz,_ix,_iy,_iz, ny, nz)      \
     _ixyz = _iz + nz*_iy + nz*ny*_ix
 
-#define cuErrCheck(err)                                                                                 \
-    {                                                                                                   \
-        if(err != cudaSuccess)                                                                          \
-        {                                                                                               \
-            fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
-            fprintf( stderr, "CUDA ERROR %d: %s\n", err, cudaGetErrorString((cudaError_t)(err)));       \
-            return (gpe_result_t)(err);                                                                 \
-        }                                                                                               \
-    } 
 
 
-/* 
- * This macro enables simple handling of cufftResult (status of cufft-library operation)
- */
-#define CHECK_CUFFT( cufft_res ) {                                                                      \
-    if (cufft_res != CUFFT_SUCCESS) {                                                                   \
-        printf( "CUFFT error in %s at line %d\n", __FILE__, __LINE__ );                                 \
-        return cufft_res;                                                                               \
-    }                                                                                                   \
-} 
-
-// Macro allocates memory and check final status
-#define gpemalloc(pointer,size,type)                                            \
-    if ( ( pointer = (type *) malloc( (size) * sizeof( type ) ) ) == NULL )     \
-    {                                                                           \
-        fprintf( stderr , "error: cannot malloc()! Exiting!\n") ;               \
-        fprintf( stderr , "error: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ; \
-        exit(1) ;                                                               \
-    }
-
-// Macro checks corectness of execution of gpe interface functions
-#define gpe_exec( cmd, ierr )                                                   \
-    { ierr=cmd;                                                                 \
-    if(ierr)                                                                    \
-    {                                                                           \
-        fprintf( stderr , "error: cannot execute: %s\n", #cmd) ;                \
-        fprintf( stderr , "file=`%s`, line=%d\n" ,__FILE__,__LINE__) ;          \
-        fprintf( stderr , "Error=%d\nExiting!\n" ,ierr) ;                       \
-        exit(1) ;                                                               \
-    } }
 
 
 
 /* ************************************************************************************ *
  *                                                                                      *
- *                               GPE ERRORS DEFINITION                                  *
+ *                                GPE ERRORS HANDLING                                   *
  *                                                                                      *
  * ************************************************************************************ */
 // TODO: Define all exit/error codes for gpe (including errors of CUFFT and CUBLAS)!
+// TODO: How to parse cudaError_t to int? Check all types if they're compatible!
+// TODO: Move to gpe_engine.cuh things that are not necessary on C++ code side. 
 #define GPE_SUCCESS 0
-/*
-// list of possible cufft errors
-        if (cufft_res == CUFFT_INVALID_PLAN) {printf("CUFFT_INVALID_PLAN\n");}
-        else if (cufft_res == CUFFT_ALLOC_FAILED) {printf("CUFFT_ALLOC_FAILED\n");}
-        else if (cufft_res == CUFFT_INVALID_TYPE) {printf("CUFFT_INVALID_TYPE\n");}
-        else if (cufft_res == CUFFT_INVALID_VALUE) {printf("CUFFT_INVALID_VALUE\n");}
-        else if (cufft_res == CUFFT_INTERNAL_ERROR) {printf("CUFFT_INTERNAL_ERROR\n");}
-        else if (cufft_res == CUFFT_EXEC_FAILED) {printf("CUFFT_EXEC_FAILED\n");}
-        else if (cufft_res == CUFFT_SETUP_FAILED) {printf("CUFFT_SETUP_FAILED\n");}
-        else if (cufft_res == CUFFT_INVALID_SIZE) {printf("CUFFT_INVALID_SIZE\n");}
-        else if (cufft_res == CUFFT_UNALIGNED_DATA) {printf("CUFFT_UNALIGNED_DATA\n");}
-        else if (cufft_res == CUFFT_INCOMPLETE_PARAMETER_LIST) {printf("INCOMPLETE_PARAMETER_LIST\n");}
-        else if (cufft_res == CUFFT_INVALID_DEVICE) {printf("CUFFT_INVALID_DEVICE\n");}
-        else if (cufft_res == CUFFT_NO_WORKSPACE) {printf("CUFFT_NO_WORKSPACE\n");}
-        else if (cufft_res == CUFFT_NOT_IMPLEMENTED) {printf("CUFFT_NOT_IMPLEMENTED\n");}
-        else if (cufft_res == CUFFT_PARSE_ERROR) {printf("PARSE_ERROR\n");}
-        else if (cufft_res == CUFFT_LICENSE_ERROR) {printf("CUFFT_LICENSE_ERROR\n");}
-        
-*/
+
+#define CUDA_ERRORS_BASE   0
+#define CUFFT_ERRORS_BASE  100
+#define CUBLAS_ERRORS_BASE 1000
+
+// here cuda errors
+// here cufft errors + CUFFT_ERRORS_BASE
+// here cublas errors + CUBLAS_ERRORS_BASE
+
+static inline const char* gpe_get_error_string( gpe_result_t gpe_res) 
+{
+    if (gpe_res != GPE_SUCCESS) 
+    {
+		if (gpe_res > 1000)
+		{
+			// parsing cublas errors
+			gpe_res -= CUBLAS_ERRORS_BASE;
+			// ...
+		}
+		else if (gpe_res > 100)
+		{
+			// parsing cufft errors
+			gpe_res -= CUFFT_ERRORS_BASE;
+			if      (gpe_res == CUFFT_INVALID_PLAN)              { return "CUFFT_INVALID_PLAN";        }
+			else if (gpe_res == CUFFT_ALLOC_FAILED)              { return "CUFFT_ALLOC_FAILED";        }
+			else if (gpe_res == CUFFT_INVALID_TYPE)              { return "CUFFT_INVALID_TYPE";        }
+			else if (gpe_res == CUFFT_INVALID_VALUE)             { return "CUFFT_INVALID_VALUE";       }
+			else if (gpe_res == CUFFT_INTERNAL_ERROR)            { return "CUFFT_INTERNAL_ERROR";      }
+			else if (gpe_res == CUFFT_EXEC_FAILED)               { return "CUFFT_EXEC_FAILED";         }
+			else if (gpe_res == CUFFT_SETUP_FAILED)              { return "CUFFT_SETUP_FAILED";        }
+			else if (gpe_res == CUFFT_INVALID_SIZE)              { return "CUFFT_INVALID_SIZE";        }
+			else if (gpe_res == CUFFT_UNALIGNED_DATA)            { return "CUFFT_UNALIGNED_DATA";      }
+			else if (gpe_res == CUFFT_INCOMPLETE_PARAMETER_LIST) { return "INCOMPLETE_PARAMETER_LIST"; }
+			else if (gpe_res == CUFFT_INVALID_DEVICE)            { return "CUFFT_INVALID_DEVICE";      }
+			else if (gpe_res == CUFFT_NO_WORKSPACE)              { return "CUFFT_NO_WORKSPACE";        }
+			else if (gpe_res == CUFFT_NOT_IMPLEMENTED)           { return "CUFFT_NOT_IMPLEMENTED";     }
+			else if (gpe_res == CUFFT_PARSE_ERROR)               { return "PARSE_ERROR";               }
+			else if (gpe_res == CUFFT_LICENSE_ERROR)             { return "CUFFT_LICENSE_ERROR";       }
+		}
+		else if (gpe_res >= 1)
+		{
+			// parsing cuda errors
+			return cudaGetErrorString((cudaError_t)(gpe_res));
+		}
+    }
+} 
+
+/* 
+ * This macro enables simple handling of cudaError_t, and passes error as gpe_result_t to gpe_exec macro
+ * TODO: if could be in gpe_engine.cuh?
+ */
+#define cuErrCheck(err)                                                                             \
+{                                                                                                   \
+    if(err != cudaSuccess)                                                                          \
+    {                                                                                               \
+        fprintf( stderr, "ERROR: file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;                      \
+        fprintf( stderr, "CUDA ERROR %d: %s\n", err, cudaGetErrorString((cudaError_t)(err)));       \
+        return (gpe_result_t)(err);                                                                 \
+    }                                                                                               \
+} 
+
+
+/* 
+ * This functions parses cufft errors to strings
+ */
+static inline const char* cufftGetErrorString( cufftResult cufft_res) 
+{
+    if (cufft_res != CUFFT_SUCCESS) 
+    {
+        if      (cufft_res == CUFFT_INVALID_PLAN)              { return "CUFFT_INVALID_PLAN";        }
+        else if (cufft_res == CUFFT_ALLOC_FAILED)              { return "CUFFT_ALLOC_FAILED";        }
+        else if (cufft_res == CUFFT_INVALID_TYPE)              { return "CUFFT_INVALID_TYPE";        }
+        else if (cufft_res == CUFFT_INVALID_VALUE)             { return "CUFFT_INVALID_VALUE";       }
+        else if (cufft_res == CUFFT_INTERNAL_ERROR)            { return "CUFFT_INTERNAL_ERROR";      }
+        else if (cufft_res == CUFFT_EXEC_FAILED)               { return "CUFFT_EXEC_FAILED";         }
+        else if (cufft_res == CUFFT_SETUP_FAILED)              { return "CUFFT_SETUP_FAILED";        }
+        else if (cufft_res == CUFFT_INVALID_SIZE)              { return "CUFFT_INVALID_SIZE";        }
+        else if (cufft_res == CUFFT_UNALIGNED_DATA)            { return "CUFFT_UNALIGNED_DATA";      }
+        else if (cufft_res == CUFFT_INCOMPLETE_PARAMETER_LIST) { return "INCOMPLETE_PARAMETER_LIST"; }
+        else if (cufft_res == CUFFT_INVALID_DEVICE)            { return "CUFFT_INVALID_DEVICE";      }
+        else if (cufft_res == CUFFT_NO_WORKSPACE)              { return "CUFFT_NO_WORKSPACE";        }
+        else if (cufft_res == CUFFT_NOT_IMPLEMENTED)           { return "CUFFT_NOT_IMPLEMENTED";     }
+        else if (cufft_res == CUFFT_PARSE_ERROR)               { return "PARSE_ERROR";               }
+        else if (cufft_res == CUFFT_LICENSE_ERROR)             { return "CUFFT_LICENSE_ERROR";       }
+    }
+} 
+
+/* 
+ * This macro enables simple handling of cufftResult (status of cufft-library operation), and passes error as gpe_result_t to gpe_exec macro
+ * TODO: if could be in gpe_engine.cuh?
+ */
+#define CHECK_CUFFT( cufft_res ) {                                                                                                  \
+    if (cufft_res != CUFFT_SUCCESS) {                                                                                               \
+        fprintf( stderr, "error: %s error in %s at line %d\n", cufftGetErrorString((cufftResult)(cufft_res)), __FILE__, __LINE__ ); \
+        return (gpe_result_t) (cufft_res + CUFFT_ERRORS_BASE);                                                                      \
+    }                                                                                                                               \
+} 
+
+// TODO: here add CUBLAS
+
+
+// Macro allocates memory and check final status
+#define gpemalloc(pointer,size,type)                                        \
+if ( ( pointer = (type *) malloc( (size) * sizeof( type ) ) ) == NULL )     \
+{                                                                           \
+    fprintf( stderr , "error: cannot malloc()!\t") ;                        \
+    fprintf( stderr , "file=`%s`, line=%d\n", __FILE__, __LINE__ ) ;        \
+    fprintf( stderr , "Exiting!\n" );                                       \
+    exit(EXIT_FAILURE) ;                                                    \
+}
+
+// Macro checks corectness of execution of gpe interface functions
+#define gpe_exec( cmd, ierr )                                                               \
+{                                                                                           \
+	ierr=cmd;                                                                               \
+	if(ierr)                                                                                \
+	{                                                                                       \
+		fprintf( stderr , "error: cannot execute: %s\t", #cmd) ;                            \
+		fprintf( stderr , "file=`%s`, line=%d\t" ,__FILE__,__LINE__) ;                      \
+		fprintf( stderr , "Error=%d (%s)\nExiting!\n", ierr, gpe_get_error_string(ierr)) ;  \
+		exit(EXIT_FAILURE) ;                                                                \
+	}                                                                                       \ 
+}
+
 
 
 

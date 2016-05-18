@@ -54,12 +54,10 @@
 
 
 
-static inline void check_particle_type()
+static inline void gpe_check_particle_type()
 {
 	if (GPE_FOR == PARTICLES) printf("# GPE FOR PARTICLES\n");
 	if (GPE_FOR == DIMERS   ) printf("# GPE FOR DIMERS\n");
-	
-	printf("GAMMA: %.2f\n\n",GAMMA);
 }
 
 

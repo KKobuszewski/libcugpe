@@ -260,10 +260,12 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
     double r;
     gpe_result_t res;
     
-    check_particle_type();
+    // check if mode is right
     #ifndef GAMMA
         return -99; // not supported mode
     #endif
+    gpe_check_particle_type();
+    gpe_print_interactions_type();
     
     // Set flags
     gpe_flags.vortex_set = 0;
@@ -273,7 +275,8 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
     gpe_mem.threads=nthreads;
     gpe_mem.blocks=(int)ceil((float)nxyz/nthreads);
 
-//     printf("GPU SETTING: THREADS=%d, BLOCKS=%d, THREADS*BLOCKS=%d, nxyz=%d\n",gpe_mem.threads,gpe_mem.blocks,gpe_mem.threads*gpe_mem.blocks,nxyz);
+//     printf("# GPU SETTING: THREADS=%d, BLOCKS=%d, THREADS*BLOCKS=%d, nxyz=%d\n",gpe_mem.threads,gpe_mem.blocks,gpe_mem.threads*gpe_mem.blocks,nxyz);
+    printf("\n");
     
     // Fill const memory
     ui=nx;
