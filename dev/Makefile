@@ -6,6 +6,7 @@ NZ = 32
 
 PROG_DESC = 
 INTERACTIONS = 
+VEXT =
 
 # SIMULATION PARAMETERS
 # change parameters with make -e PROG_DESC=
@@ -33,21 +34,21 @@ GPU_ARCH = -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=sm_
 CC 	  = gcc
 CC_FLAGS  = -Wall -Wundef -m64 -march=native -O3 -msse4 -ftree-vectorizer-verbose=1 -fopenmp -fPIC
 CC_INC    = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
-CC_DEFS   = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
+CC_DEFS   = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS) -DVEXT=$(VEXT)
 CC_LIBS   = -lcudart -lgomp -lpthread -lm
 
 # c++ compiler
 CXX	  = g++
 CXX_FLAGS = -Wall -Wundef -m64 -march=native -O3 -msse4 -ftree-vectorizer-verbose=1 -fopenmp -fPIC
 CXX_INC   = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
-CXX_DEFS  = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
+CXX_DEFS  = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS) -DVEXT=$(VEXT)
 CXX_LIBS  = -lcudart -lgomp -lpthread -lm
 
 # cuda compiler
 NVCC      = /usr/local/cuda-7.0/bin/nvcc
 NVCC_FLAGS= -m64 -O3 $(GPU_ARCH) -Xcudafe "--diag_suppress=declared_but_not_referenced --diag_suppress=set_but_not_used" -Xcompiler -fPIC
 NVCC_INC  = -I/usr/local/cuda-7.0/include -I/usr/local/cuda/samples/common/inc -I.
-NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS)
+NVCC_DEFS = -DNX=$(NX) -DNY=$(NY) -DNZ=$(NZ) -DINTERACTIONS=$(INTERACTIONS) -DVEXT=$(VEXT)
 NVCC_LIBS = -lcudart -lcufft -lm
 
 # linker

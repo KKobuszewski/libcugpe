@@ -122,7 +122,11 @@ typedef struct
     i=i-_ix * ny * nz;                      \
     _iy=i/nz;                               \
     _iz=i-_iy * nz;
-
+/*
+ * ix = ixyz/(ny*nz);
+ * iy = (ixyz - ix(ixyz)*ny*nz)/nz
+ * iz = ixyz - ix(ixyz)*ny*nz - iy(ixyz)* nz
+ */
 
 
 #define ixiyiz2ixyz(_ixyz,_ix,_iy,_iz, ny, nz)      \
@@ -187,6 +191,7 @@ static inline const char* gpe_get_error_string( gpe_result_t gpe_res)
 			return cudaGetErrorString((cudaError_t)(gpe_res));
 		}
     }
+    return "Unknown error!";
 } 
 
 /* 
@@ -227,6 +232,7 @@ static inline const char* cufftGetErrorString( cufftResult cufft_res)
         else if (cufft_res == CUFFT_PARSE_ERROR)               { return "PARSE_ERROR";               }
         else if (cufft_res == CUFFT_LICENSE_ERROR)             { return "CUFFT_LICENSE_ERROR";       }
     }
+    return "CUFFT_SUCCESS";
 } 
 
 /* 
@@ -263,7 +269,7 @@ if ( ( pointer = (type *) malloc( (size) * sizeof( type ) ) ) == NULL )     \
 		fprintf( stderr , "file=`%s`, line=%d\t" ,__FILE__,__LINE__) ;                      \
 		fprintf( stderr , "Error=%d (%s)\nExiting!\n", ierr, gpe_get_error_string(ierr)) ;  \
 		exit(EXIT_FAILURE) ;                                                                \
-	}                                                                                       \ 
+	}                                                                                       \
 }
 
 
@@ -425,6 +431,12 @@ int gpe_get_currents(double *t, double * jx, double * jy, double * jz);
  * */
 int gpe_normalize_psi();
 
+/**
+ * Function returns normalization constant (integral over density).
+ * @param norm   - normalization constant (integral over density)[OUTPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ */
+int gpe_get_norm(double* norm);
 
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$
@@ -481,7 +493,6 @@ int gpe_evolve_vortex3(int nt, double* chemical_potential = NULL);
  * */
 int gpe_evolve_enforced_phase(int nt, double* chemical_potential = NULL);
 
-#ifdef DIPOLAR
 
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with dipolar interactions specified by a_dip constant.
@@ -493,9 +504,9 @@ int gpe_evolve_enforced_phase(int nt, double* chemical_potential = NULL);
 int gpe_evolve_dipolar(int nt);
 
 /**
- * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with dipolar interactions specified by a_dip constant.
- * (a_dip
- * NOTE: Assuming that a_dip is declared in d_user_params.
+ * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$
+ * with dipolar interactions specified by a_dip constant.
+ * NOTE: Assuming that a_dip is declared in d_user_params[A_DIP].
  * @param nt number of steps to evolve [INPUT]
  * @param chemical_potential chemical potential of a system in ITE
  * @return It returns 0 if success otherwise error code is returned.
@@ -503,7 +514,7 @@ int gpe_evolve_dipolar(int nt);
 int gpe_evolve_dipolar(int nt, double* chemical_potential);
 
 /**
- * Function returns energy of dipolar interactions computed from wave function and Vdip operator.
+ * Function returns energy of dipolar interactions computed from formula $F^{-1}[ F[density](-k) * F[Vdd](k) * F[density](k) ]$.
  * NOTE: Assuming that a_dip is declared in d_user_params.
  * 
  * @param t value of time [OUTPUT]
@@ -511,7 +522,16 @@ int gpe_evolve_dipolar(int nt, double* chemical_potential);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_energy_dipolar(double *t, double *edip);
-#endif
+
+/**
+ * Function returns energy of dipolar interactions computed from wave function and Vdip operator.
+ * NOTE: Assuming that a_dip is declared in d_user_params.
+ *
+ * @param t value of time [OUTPUT]
+ * @param edip expectation value of dipolar interactions energy [OUTPUT]
+ * @return It returns 0 if success otherwise error code is returned.
+ * */
+int gpe_energy_dipolar2(double *t, double *edip);
 
 /**
  * Function returns energy computed from wave function and corresponding time.
@@ -530,5 +550,11 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext);
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_destroy_engine();
+
+
+/**
+ * Function prints potential type. (FOR DEBUGING)
+ * */
+void gpe_print_potential_type();
 
 #endif

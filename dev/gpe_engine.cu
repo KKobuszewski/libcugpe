@@ -29,6 +29,10 @@
 #include "reductions.cuh"
 #include "gpe_engine.cuh"
 
+// TODO:
+//#ifdef DIPOLAR
+//#include "dipolar.cuh"
+//#endif
 
     
 /***************************************************************************/ 
@@ -38,6 +42,21 @@
 
 gpe_mem_t gpe_mem;
 gpe_flags_t gpe_flags;
+
+#define xstr(s) str(s)
+#define str(s) #s
+
+// check values of macros in compile-time
+#pragma message (__FILE__ ":" xstr(__LINE__) " VEXT Macro value: " xstr(VEXT))
+#pragma message (__FILE__ ":" xstr(__LINE__) " INTERACTIONS Macro value: " xstr(INTERACTIONS))
+#pragma message (__FILE__ ":" xstr(__LINE__) " Lattice: " xstr(nx) "x" xstr(ny) "x" xstr(nz))
+#pragma message (__FILE__ ":" xstr(__LINE__) " GAMMA Macro value: " xstr(GAMMA))
+
+
+void gpe_print_potential_type()
+{
+    printf("%s\n",potential_type);
+}
 
 
 // ============================ CONSTANT MEMORY ALLOCATION ==================================================
@@ -68,7 +87,11 @@ __constant__ cuCplx d_exp_kkz2_over_nxyz[NZ]; // exp( (dt/(i*alpha-beta)) * 1/(2
 
 #ifndef MAX_USER_PARAMS
 #define MAX_USER_PARAMS 32
+#pragma message (__FILE__ ":" __LINE__ "Setting MAX USER PARAMS: " xstr(MAX_USER_PARAMS))
+#else
+#pragma message (__FILE__ ":" __LINE__ " MAX USER PARAMS: " xstr(MAX_USER_PARAMS))
 #endif
+
 __constant__ double d_user_param[MAX_USER_PARAMS];
 __constant__ uint d_nx; // lattice size in x direction
 __constant__ uint d_ny; // lattice size in y direction
@@ -262,8 +285,11 @@ int gpe_create_engine(double alpha, double beta, double dt, double npart, int nt
     
     // check if mode is right
     #ifndef GAMMA
+        printf("\ngpe_create_engine: GAMMA not defined!");
         return -99; // not supported mode
     #endif
+
+
     gpe_check_particle_type();
     gpe_print_interactions_type();
     
@@ -366,7 +392,7 @@ int gpe_change_alpha_beta(double alpha, double beta)
     // update reciprocal lattice
     gpe_reciprocal_lattice_change(alpha, beta);
     
-    return 0;
+    return GPE_SUCCESS;
 }
 
 int gpe_set_rte_evolution()
@@ -383,13 +409,11 @@ int gpe_set_ite_evolution()
 
 int gpe_set_time(double t0)
 {
-    
-    
     cuErrCheck( cudaMemcpyToSymbol(d_t0, &t0, sizeof(double)) ) ;
     gpe_mem.t0=t0;
     gpe_mem.it=0;    
     
-    return 0;
+    return GPE_SUCCESS;
 }
 
 int gpe_set_user_params(int size, double *params)
@@ -398,7 +422,7 @@ int gpe_set_user_params(int size, double *params)
     
     cuErrCheck( cudaMemcpyToSymbol(d_user_param, params, MAX_USER_PARAMS*sizeof(double)) );
     
-    return 0;
+    return GPE_SUCCESS;
 }
 
 int gpe_set_quantum_friction_coeff(double qfcoeff)
@@ -425,7 +449,7 @@ int gpe_set_quantum_friction_coeff(double qfcoeff)
         gpe_mem.d_wrk3C = NULL;
     }
     
-    return 0;
+    return GPE_SUCCESS;
 }
 
 
@@ -441,7 +465,7 @@ int gpe_set_vortex(const double vortex_x0, const double vortex_y0, const int8_t 
     
     gpe_flags.vortex_set = 1;
     
-    return 0; // success
+    return GPE_SUCCESS; // success
 }
 
 /*
@@ -468,14 +492,14 @@ __global__ void __gpe_imprint_vortexline_zdir_(cuCplx *psi)
         _x = constgpu(ix) - 1.0*(NX/2) - d_vortex_x0;
         _y = constgpu(iy) - 1.0*(NY/2) - d_vortex_y0;
         
-        abs_psi = hypot(lpsi.x, lpsi.y); //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y); (intrinsic should be faster)
+        abs_psi = hypot(lpsi.x, lpsi.y); //abs_psi = sqrt(lpsi.x*lpsi.x + lpsi.y*lpsi.y);
         phase = atan2(_x,_y); // atan2(0,0) == -pi/2
         phase *= (double) (d_vortex_Q); //if (d_vortex_Q != 1) phase *= (double) (d_vortex_Q);
         lpsi.x = abs_psi*cos(phase);
         lpsi.y = abs_psi*sin(phase);
         
         psi[ixyz] = lpsi;
-	    
+        
     }
 }
 
@@ -512,7 +536,7 @@ __global__ void __gpe_imprint2_vortexline_zdir_(cuCplx *psi)
             lpsi.y = abs_psi*sin(phase);
             
             psi[ixyz] = lpsi;
-	    }
+        }
     }
 }
 
@@ -520,8 +544,8 @@ __global__ void __gpe_imprint2_vortexline_zdir_(cuCplx *psi)
 
 __global__ void __gpe_compute_phase__(cuCplx* psi, double* d_phase)
 {
-	size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
-	if(ixyz<nxyz)
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    if(ixyz<nxyz)
     {
         d_phase[ixyz] = cplxArg(psi[ixyz]);
     }
@@ -529,7 +553,7 @@ __global__ void __gpe_compute_phase__(cuCplx* psi, double* d_phase)
 
 int gpe_set_phase(double* h_phase)
 {
-	
+    
     if (gpe_mem.d_phase == NULL) cuErrCheck( cudaMalloc( &gpe_mem.d_phase, sizeof(double)*nxyz ) );
     
     cuErrCheck( cudaMemcpy( gpe_mem.d_phase, h_phase, sizeof(double)*nxyz, cudaMemcpyHostToDevice) ); 
@@ -540,7 +564,7 @@ int gpe_set_phase(double* h_phase)
 
 int gpe_get_phase(double* h_phase)
 {
-	
+    
     if (gpe_mem.d_phase == NULL) cuErrCheck( cudaMalloc( &gpe_mem.d_phase, sizeof(double)*nxyz ) );
     
     __gpe_compute_phase__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi,gpe_mem.d_phase);
@@ -552,8 +576,8 @@ int gpe_get_phase(double* h_phase)
 
 __global__ void __gpe_enforce_phase__(cuCplx* psi, double* d_phase)
 {
-	size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
-	if(ixyz<nxyz)
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    if(ixyz<nxyz)
     {
         psi[ixyz] = cplxScale( cplxExpi(d_phase[ixyz]), cplxAbs(psi[ixyz]) );
     }
@@ -645,13 +669,25 @@ int gpe_get_density(double *t, double * density)
     return 0;
 }
 
+int gpe_get_norm(double* norm)
+{
+    // compute density and integrate through all dimensions
+    __gpe_compute_density__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2R);
+    cuErrCheck( local_reduction(gpe_mem.d_wrk2R, nxyz, gpe_mem.d_wrk2R, gpe_mem.threads, 0) );
+
+    // copy result of integration to host
+    cuErrCheck( cudaMemcpy(norm, gpe_mem.d_wrk2R, sizeof(double), cudaMemcpyDeviceToHost) );
+
+    return GPE_SUCCESS;
+}
+
 
 // =================== Accesing wavefunction =============================================================================
 
 int gpe_set_psi(double t, cuCplx * psi)
 {
     
-    cuErrCheck( cudaMemcpyToSymbol(d_t0, &t, sizeof(double)) ) ;
+    cuErrCheck( cudaMemcpyToSymbol(d_t0, &t, sizeof(double)) );
     gpe_mem.it=0;
     gpe_mem.t0=t;
     cuErrCheck( cudaMemcpy( gpe_mem.d_psi , psi , sizeof(cuCplx)*nxyz, cudaMemcpyHostToDevice ) );
@@ -687,7 +723,7 @@ __global__ void __gpe_exp_Vstep1_(uint it, cuCplx *psi_in, cuCplx *psi_out, doub
         ixyz2ixiyiz(ixyz,ix,iy,iz,i); 
         
         lpsi = psi_in[ixyz]; // psi to register
-        lpsi=gpe_modify_psi(ix, iy, iz, it, lpsi); // modify psi
+        lpsi = gpe_modify_psi(ix, iy, iz, it, lpsi); // modify psi
         lrho = gpe_density(lpsi); // compute density
         lv=gpe_external_potential(ix, iy, iz, it) + gpe_dEDFdn(lrho,it); // external potential + mean field
         
@@ -844,7 +880,7 @@ __global__ void __gpe_multiply_by_expT__(cuCplx *psi_in, cuCplx *psi_out)
         _wavef=cplxMul(_wavef,d_exp_kky2[iy]);
         _wavef=cplxMul(_wavef,d_exp_kkz2_over_nxyz[iz]); // note - normalization factor is included here
         psi_out[ixyz]=_wavef; // send to global memory
-    }    
+    }
 }
 
 __global__ void __gpe_multiply_by_k2_qf__(cuCplx *psi_in, cuCplx *psi_out)
@@ -888,6 +924,86 @@ int gpe_compute_qf_potential(cuCplx *psi, cuCplx *wrk, double *qfpotential)
         
     return 0;
 }
+
+
+// ===================== Long range interactions evolution specific functions ======================================================
+
+/*
+ * We denote:
+ * vdd  - dipole-dipole interaction pseudopotential, must be convolved with density of wavefunction.
+ * vdip - dipolar inteactions contribution to mean-field pseudopotential
+ * vcon - contact inteactions contribution to mean-field pseudopotential
+ * vint - vdip + vcon
+ * 
+ * suffix: _k - variable/function in reciprocal space
+ */
+
+
+
+/**
+ * This function computes dipolar interactions propagator's exponent
+ * 
+ * Uses Fourier transform of density and multiplies it by Fourier transform of particle-particle interaction potential.
+ * NOTE: density_k and vint_k_out can be phisically the same arrays!
+ * 
+ * @param density_k  - Fourier transform of density of wavefunction
+ * @param vdip_k_out - potential of dipolar part of interactions in Fourier space (make inverse Fourier transform to get
+ *                     real-space function)
+ */
+__global__ void __gpe_compute_vint_k__(cuCplx* density_k, cuCplx* vdip_k_out)
+{
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    uint ix, iy, iz, i;
+    cuCplx _vdip;
+    
+    if (ixyz<nxyz)
+    {
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
+        
+        // multipling fourier transform of dipole-dipole interaction potential and fourier transform of density
+        // NOTE: normalization factor for CUFFT included here
+        _vdip = cplxScale( density_k[ixyz], gpe_Vpp_k(d_kkx[ix],d_kky[iy],d_kkz[iz])/((double) nxyz) );
+        vdip_k_out[ixyz] = _vdip;
+    }
+}
+
+/**
+ * For Strang splitting and Euler time integration.
+ * Constructs  exp(-i*dt*V/2) and applies exp(-i*dt*V/2) * psi , where  V = (Vext + Vcon + Vdip).
+ * 
+ * NOTE: Assuming Vdip is counted and saved in psi_out array before.
+ * 
+ * */
+__global__ void __gpe_eulerstrang_exp_Vstep__(uint it, cuCplx *psi_in, cuCplx *psi_out, cuCplx *vdip)
+{
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    uint ix, iy, iz, i;
+    
+    // registers
+    cuCplx lpsi, exp_lv, lvdip;
+    double lrho, lv;
+    
+    if(ixyz<nxyz)
+    {
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i); 
+        
+        lvdip = vdip[ixyz];
+        lpsi = psi_in[ixyz]; // psi to register
+        lpsi = gpe_modify_psi(ix, iy, iz, it, lpsi); // modify psi
+        
+        lrho = gpe_density(lpsi); // compute density
+        lv   = gpe_external_potential(ix, iy, iz, it) + gpe_dEDFdn(lrho,it) + lvdip.x; // external potential + mean field
+        //NOTE: Taking only real part of vdip
+        
+        //wrkR[ixyz]=lv; // it will be used later
+        exp_lv = cplxExp( cplxScale(d_step_coeff,lv) );
+        
+        psi_out[ixyz] = cplxMul(lpsi, exp_lv); // apply and save
+        //printf("x: %d\ty: %d\tz: %d\t\tpsi %e + %ej\n",ix,iy,iz,lpsi.x,lpsi.y);
+    }  
+}
+
+
 
 
 // ===================== Evolution interface ===========================================
@@ -1355,6 +1471,133 @@ int gpe_evolve_enforced_phase(int nt, double* chemical_potential)
 
 
 
+/* ***************************************** DIPOLAR EVOLUTION ********************************************* */
+
+/**
+ * Function evolves wave funcion nt steps with dipolar interactions.
+ * Using Strang splitting and Euler time scheme.
+ * TODO: Check if Strang splitting is proper.
+ * TODO: Implement quantum friction.
+ * 
+ * */
+int gpe_evolve_dipolar(int nt)
+{
+    cufftResult cufft_result;
+    int i;
+
+    for(i=0; i<nt; i++)
+    {
+        
+        // TODO: Use cufft D2Z and __gpe_compute_density__ and gpe_mem.d_wrk2R (first half)
+        // TODO: Think of batched cufft
+        
+        /* ***  potential part exp(V dt/2) *** */
+        // computing Vdip
+        __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);  // here computes density and saves as real part of array for psi copy array
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD) );       // here count CUFFT of density
+        __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);     // here multiply fourier transform of density by Vdd
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE) );       // here count CUFFT backward (dipole-dipole interactions' integral)
+        
+        // perform exp(Vext dt/2)exp(Vcon dt/2)exp(Vdip dt/2)
+        __gpe_eulerstrang_exp_Vstep__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi, gpe_mem.d_psi2); // psi_in. psi_out, vdip
+
+        
+        /* *** kinetic part exp(T dt) *** */
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_FORWARD);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi);
+        
+        cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_INVERSE);
+        if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        
+        
+        /* ***  potential part exp(V dt/2) *** */
+        // computing Vdip
+        __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);  // here computes density and saves as real part of array for psi copy array
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD) );       // here count CUFFT of density
+        __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);     // here multiply fourier transform of density by Vdd
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE) );       // here count CUFFT backward (dipole-dipole interactions' integral)
+        
+        // perform exp(Vext dt/2)exp(Vcon dt/2)exp(Vdip dt/2)
+        __gpe_eulerstrang_exp_Vstep__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi, gpe_mem.d_psi2); // psi_in. psi_out, vdip
+
+        // if ITE evolution is set then normalize
+        if(gpe_mem.beta!=0.0)   cuErrCheck( gpe_normalize_psi() );
+        
+        gpe_mem.it = gpe_mem.it + 1;
+    }
+    
+    return GPE_SUCCESS;
+}
+
+
+/**
+ * Function evolves wave funcion nt steps with dipolar interactions.
+ * Using Strang splitting and Euler scheme in time.
+ * TODO: Check if Strang splitting is proper and add Heun's midpoint time scheme.
+ * TODO: Implement quantum friction.
+ * 
+ * */
+int gpe_evolve_dipolar(int nt, double* chemical_potential)
+{
+    cufftResult cufft_result;
+    int i;
+
+    for(i=0; i<nt; i++)
+    {
+        
+        // TODO: Use cufft D2Z and __gpe_compute_density__ and gpe_mem.d_wrk2R (first half)
+        // TODO: Think of batched cufft
+        
+        /* ***  potential part exp(V dt/2) *** */
+        // computing Vdip
+        __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);  // here computes density and saves as real part of array for psi copy array
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD) );       // here count CUFFT of density
+        __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);     // here multiply fourier transform of density by Vdd
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE) );       // here count CUFFT backward (dipole-dipole interactions' integral)
+
+        // perform exp(Vext dt/2)exp(Vcon dt/2)exp(Vdip dt/2)
+        __gpe_eulerstrang_exp_Vstep__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi, gpe_mem.d_psi2); // psi_in. psi_out, vdip
+
+        
+        /* *** kinetic part exp(T dt) *** */
+        cufft_result = cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_FORWARD);
+        if (cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        __gpe_multiply_by_expT__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi);   
+        
+        cufft_result = cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi, CUFFT_INVERSE);
+        if (cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+        
+        
+        
+        /* ***  potential part exp(V dt/2) *** */
+        // computing Vdip
+        __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);  // here computes density and saves as real part of array for psi copy array
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD) );       // here count CUFFT of density
+        __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);     // here multiply fourier transform of density by Vdd
+        CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE) );       // here count CUFFT backward (dipole-dipole interactions' integral)
+        
+        // perform exp(Vext dt/2)exp(Vcon dt/2)exp(Vdip dt/2)
+        __gpe_eulerstrang_exp_Vstep__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.it, gpe_mem.d_psi, gpe_mem.d_psi, gpe_mem.d_psi2); // psi_in. psi_out, vdip
+
+        
+        
+        // if ITE evolution is set then normalize
+        if(gpe_mem.beta!=0.0)
+        {
+            cuErrCheck( gpe_normalize_psi(chemical_potential) );
+        }
+        
+        gpe_mem.it = gpe_mem.it + 1;
+    }
+    
+    return GPE_SUCCESS;
+}
+
+
 
 // ========================= Energy counting =================================================
 
@@ -1364,7 +1607,7 @@ __global__ void __gpe_compute_vext__(uint it, double *rho, double *wrk)
     uint ix, iy, iz, i;
     if(ixyz<nxyz)
     {
-        ixyz2ixiyiz(ixyz,ix,iy,iz,i); 
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
         wrk[ixyz]=rho[ixyz]*gpe_external_potential(ix, iy, iz, it);
     }
 }
@@ -1385,10 +1628,10 @@ __global__ void __gpe_compute_vext_vint__(uint it, double *rho, double *wrk1, do
     double lrho;
     if(ixyz<nxyz)
     {
-        ixyz2ixiyiz(ixyz,ix,iy,iz,i); 
-        lrho=rho[ixyz];
-        wrk1[ixyz]=lrho*gpe_external_potential(ix, iy, iz, it);
-        wrk2[ixyz]=gpe_EDF(lrho, it);
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
+        lrho       = rho[ixyz];
+        wrk1[ixyz] = lrho * gpe_external_potential(ix, iy, iz, it);
+        wrk2[ixyz] = gpe_EDF(lrho, it);
     }
 }
 
@@ -1396,19 +1639,20 @@ __global__ void __gpe_multiply_by_k2__(cuCplx *psi_in, cuCplx *psi_out)
 {
     size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
     uint ix, iy, iz, i;
-    
+
     if(ixyz<nxyz)
     {
-        ixyz2ixiyiz(ixyz,ix,iy,iz,i); 
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
 
-        psi_out[ixyz]=cplxScale(psi_in[ixyz], ( d_kkx[ix]*d_kkx[ix] + d_kky[iy]*d_kky[iy] + d_kkz[iz]*d_kkz[iz] )/(constgpu(2.0*GAMMA*nxyz)) ); 
-            
-    }    
+        psi_out[ixyz] = cplxScale(psi_in[ixyz], ( d_kkx[ix]*d_kkx[ix] + d_kky[iy]*d_kky[iy] + d_kkz[iz]*d_kkz[iz] ) /
+                        (constgpu(2.0*GAMMA*nxyz)) );
+
+    }
 }
 
 __global__ void __gpe_overlap_real__(cuCplx *psi1, cuCplx *psi2, double *overlap)
 {
-    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    size_t ixyz = threadIdx.x + blockIdx.x * blockDim.x;
     if(ixyz<nxyz)
     {
         overlap[ixyz]= cplxMulR( cplxConj(psi1[ixyz]),  psi2[ixyz] );
@@ -1419,18 +1663,18 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext)
 {
     int ierr;
     cufftResult cufft_result;
-   
+
     *t = gpe_mem.t0 + gpe_mem.dt*gpe_mem.it;
-    
+
     if(gpe_mem.beta==0.0) // normalize - otherwise is normalized every time step
     {
-        ierr=gpe_normalize_psi();
-        if(ierr!=0) return ierr;
+        ierr = gpe_normalize_psi();
+        if (ierr!=0) return ierr;
     }
-    
+
     // Compute density
     __gpe_compute_density__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2R);
-    
+
     // Compute <V_ext> and <V_int>
     double * wrk1 = (double *)gpe_mem.d_wrk;
     double * wrk2 = wrk1 + nxyz;
@@ -1439,19 +1683,127 @@ int gpe_energy(double *t, double *ekin, double *eint, double *eext)
     cuErrCheck( local_reduction(wrk2, nxyz, wrk2, gpe_mem.threads, 0) );
     cuErrCheck( cudaMemcpy( eext , wrk1 , sizeof(double), cudaMemcpyDeviceToHost ) );
     cuErrCheck( cudaMemcpy( eint , wrk2 , sizeof(double), cudaMemcpyDeviceToHost ) );
-        
+
     // Compute <T> - kinetic energy
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi, gpe_mem.d_psi2, CUFFT_FORWARD);
     if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
     __gpe_multiply_by_k2__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2, gpe_mem.d_psi2);
     cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE);
-    if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;    
+    if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
     __gpe_overlap_real__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2, gpe_mem.d_wrk2R);
     cuErrCheck( local_reduction(gpe_mem.d_wrk2R, nxyz, gpe_mem.d_wrk2R, gpe_mem.threads, 0) );
     cuErrCheck( cudaMemcpy( ekin , gpe_mem.d_wrk2R , sizeof(double), cudaMemcpyDeviceToHost ) );
-    
+
     return 0;
 }
+
+
+
+/**
+ *
+ * Edip = <Vdip> = F^{-1} [ F[density](k) F[Vdd](k) F[density](-k) ](r)
+ *
+ * ??? density is purely real so F[density](-k) = cmplx_conjg( F[density](k) ) ???
+ *
+ */
+__global__ void __gpe_compute_vdip_energy__( cuCplx *density_k, double *wrkR)
+{
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    size_t ixyz_reflected;
+    uint ix, iy, iz, i;
+    cuCplx energy;//,density_conjg;
+
+    if (ixyz < nxyz)
+    {
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i);
+
+        // count index of density (-k)
+        // NOTE: cause FFT shift values for -k are indexed from Nx/2 to Nx-1
+        ixiyiz2ixyz(ixyz_reflected,abs((int)nx-(int)ix),abs((int)ny-(int)iy),abs((int)nz-(int)iz), ny, nz);
+        //density_conjg = cplxConj(density_k[ixyz]); // <- this alternative is it proper???
+
+        // multipling Fourier transform of dipole-dipole interaction potential and Fourier transform of density
+        energy = cplxScale( density_k[ixyz], gpe_Vpp_k(d_kkx[ix],d_kky[iy],d_kkz[iz]) );
+
+        // value of multiplication should be real, so we take only real part: c = a.x * b.x - a.y * b.y;
+        wrkR[ixyz] = cplxMulR(density_k[ixyz_reflected],energy);
+    }
+}
+
+int gpe_energy_dipolar(double *t, double *edip)
+{
+    cufftResult cufft_result;
+    //int i;
+
+    // here count F[ N|psi|^2 ] = F[ density ]
+    __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+    cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+    if (cufft_result!= CUFFT_SUCCESS) return (int) cufft_result;
+    // values of density is stored in gpe_mem.d_psi2
+    cuCplx* density_k = gpe_mem.d_psi2;
+
+
+    // here count F[ density ](-k) * F[Vdd](k) * F[ density ](k), result stored in gpe_mem.d_wrk
+    double* wrkR = (double*) gpe_mem.d_wrk;
+    __gpe_compute_vdip_energy__<<<gpe_mem.blocks, gpe_mem.threads>>>(density_k,wrkR);
+
+    // sum wrkR
+    cuErrCheck( local_reduction(wrkR, nxyz, wrkR, gpe_mem.threads, 0) );
+    cuErrCheck( cudaMemcpy( edip, wrkR , sizeof(double), cudaMemcpyDeviceToHost ) ); // copies only first element
+
+    // scale result to get proper values due to integration in reciprocal space, dk^3 = (2 \pi)^3 / nxyz and dx^3 = 1
+    *edip /= nxyz; // normalization (2 \pi)^3 is included in __gpe_compute_vdip_energy__
+
+    return GPE_SUCCESS;
+}
+
+
+
+/* **************************************************************************** *
+ *                                                                              *
+ *  Second method: simply count the operator value and its expectation value.   *
+ *                                                                              *
+ * **************************************************************************** */
+__global__ void __gpe_compute_vdip_energy2__( cuCplx *psi, cuCplx *vdip, double *wrkR)
+{
+    size_t ixyz= threadIdx.x + blockIdx.x * blockDim.x;
+    uint ix, iy, iz, i;
+    double lrho, lvdip;
+    if(ixyz<nxyz)
+    {
+        ixyz2ixiyiz(ixyz,ix,iy,iz,i); 
+        lrho  = gpe_density(psi[ixyz]);
+        lvdip = vdip[ixyz].x; // taking only real part
+        
+        wrkR[ixyz] = lrho * lvdip; 
+    }
+}
+
+int gpe_energy_dipolar2(double *t, double *edip)
+{
+    cufftResult cufft_result;
+    //int i;
+    
+    // here count convolution vdd and |psi|^2 = Vdip (operator)
+    __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+    CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD) );
+    __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);
+    CHECK_CUFFT( cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE) ); // TODO: Check normalization
+    
+    double* wrkR = (double*) gpe_mem.d_wrk;
+    // here count <psi| Vdip |psi>
+    __gpe_compute_vdip_energy2__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi,gpe_mem.d_psi2,wrkR);
+    
+    cuErrCheck( local_reduction(wrkR, nxyz, wrkR, gpe_mem.threads, 0) );
+    cuErrCheck( cudaMemcpy( edip , wrkR , sizeof(double), cudaMemcpyDeviceToHost ) ); // copies only first element
+    
+    *edip *= .5; // term 1/2 before energy density (summing by pairs of particles)
+    
+    return GPE_SUCCESS;
+}
+
+//#endif /* DIPOLAR */
+
 
 // ========================== Currents of probability ================================
 
@@ -1533,7 +1885,7 @@ int gpe_get_currents(double* t, double* jx, double* jy, double* jz)
     if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;    
     __gpe_overlap_real__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_wrk2, gpe_mem.d_wrk3R);    
     cuErrCheck( cudaMemcpy( jz , gpe_mem.d_wrk3R , sizeof(double)*nxyz, cudaMemcpyDeviceToHost ) );
-
+    
     // Free memory
     if(alloc) 
     {
@@ -1563,5 +1915,122 @@ __global__ void print_gpu_array_nans( cuCplx* psi, int size)
         if (isnan(psi[i].x) || isnan(psi[i].y)) printf("x: %d\ty: %d\tz: %d\t\tpsi %e + %ej\n",ix,iy,iz,psi[i].x,psi[i].y);
     }
 }
+
+
+
+int gpe_save_density(const char* filename)
+{
+    // Count density and save as complex number
+    __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+
+    // copy from device and save to file
+    FILE* file = fopen(filename,"w");
+    if (!file) return -1;
+
+    double __complex__* temp = (double __complex__*) malloc( nxyz * sizeof(double __complex__) );
+
+    cuErrCheck( cudaMemcpy( temp, gpe_mem.d_psi2, nxyz * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost) );
+
+    fwrite(temp, sizeof(double __complex__), nxyz, file);
+    free(temp);
+    fclose(file);
+
+    return GPE_SUCCESS;
+}
+
+int gpe_save_density_fourier_transform(const char* filename)
+{
+    cufftResult cufft_result;
+
+    // compute density
+    __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+
+    // Fourier transform of density
+    cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+    if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+
+    // copy from device and save to file
+    FILE* file = fopen(filename,"w");
+    if (!file) return -1;
+
+    double __complex__* temp = (double __complex__*) malloc( nxyz * sizeof(double __complex__) );
+
+    cuErrCheck( cudaMemcpy( temp, gpe_mem.d_psi2, nxyz * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost) );
+
+    fwrite(temp, sizeof(double __complex__), nxyz, file);
+    free(temp);
+    fclose(file);
+
+
+    return GPE_SUCCESS;
+}
+
+int gpe_save_vdip_fourier_transform(const char* filename)
+{
+    cufftResult cufft_result;
+
+    // compute density
+    __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+
+    // Fourier transform of density
+    cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+    if(cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+
+
+    // here multiply fourier transform of density by Vdd
+    __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);
+
+    // copy from device and save to file
+    FILE* file = fopen(filename,"w");
+    if (!file) return -1;
+
+    double __complex__* temp = (double __complex__*) malloc( nxyz * sizeof(double __complex__) );
+
+    cuErrCheck( cudaMemcpy( temp, gpe_mem.d_psi2, nxyz * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost) );
+
+    fwrite(temp, sizeof(double __complex__), nxyz, file);
+    free(temp);
+    fclose(file);
+
+
+    return GPE_SUCCESS;
+}
+
+int gpe_save_vdip(const char* filename)
+{
+    cufftResult cufft_result;
+
+    // compute density
+    __gpe_compute_density2C__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi, gpe_mem.d_psi2);
+
+    // Fourier transform of density
+    cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_FORWARD);
+    if (cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+
+    // here multiply fourier transform of density by Vdd
+    __gpe_compute_vint_k__<<<gpe_mem.blocks, gpe_mem.threads>>>(gpe_mem.d_psi2,gpe_mem.d_psi2);
+
+    // here count CUFFT backward (dipole-dipole interactions' integral)
+    cufft_result=cufftExecZ2Z(gpe_mem.plan, gpe_mem.d_psi2, gpe_mem.d_psi2, CUFFT_INVERSE); // TODO: Check normalization
+    if (cufft_result!= CUFFT_SUCCESS) return (int)cufft_result;
+
+    // copy from device and save to file
+    FILE* file = fopen(filename,"w");
+    if (!file) return -1;
+
+    double __complex__* temp = (double __complex__*) malloc( nxyz * sizeof(double __complex__) );
+
+    cuErrCheck( cudaMemcpy( temp, gpe_mem.d_psi2, nxyz * sizeof(cuDoubleComplex), cudaMemcpyDeviceToHost) );
+
+    fwrite(temp, sizeof(double __complex__), nxyz, file);
+    free(temp);
+    fclose(file);
+
+
+    return GPE_SUCCESS;
+}
+
+//#endif /*  dipolar */
+
 
 // ==================================================================================================================================

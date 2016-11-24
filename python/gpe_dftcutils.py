@@ -45,7 +45,10 @@ def get_data(datafile,measure_it=0,show=False):
         """print('# lenght of array consistent.\t\tnom*Nx*Ny*Nz =',nom*Nx*Ny*Nz,'\tarray shape:',data.shape)"""
         pass
     else:
-        print('# ERROR: lenght of array incosistent.\tnom*Nx*Ny*Nz =',nom*Nx*Ny*Nz,'\tarray shape:',data.shape)
+        if (len(data) % (Nx*Ny*Nz) == 0):
+            nom = len(data)/(Nx*Ny*Nz)
+        else:
+            print('# ERROR: lenght of array incosistent.\tnom*Nx*Ny*Nz =',nom*Nx*Ny*Nz,'\tarray shape:',data.shape)
     data = np.reshape(data,[nom,Nx,Ny,Nz])
     density = gamma * np.abs(data[measure_it,:,:,:])**2 * a_ho**3
     phase   = np.angle(data[measure_it,:,:,:])
@@ -183,3 +186,33 @@ def create_meshgrid(Nx=8,Ny=8,Nz=0,scale=1.):
     else:
         X,Y,Z = np.meshgrid(x,y,z, indexing='ij')
         return X,Y,Z
+
+
+
+# ### CURRENTS ######
+
+def get_currents(datafile,measure_it=0,show=False):
+    
+    if show:
+        print('# loading file {} ...'.format(datafile))
+    Nx,Ny,Nz,dt,nom,a_scat,aspect,omega_x,r0,npart,time_tot = read_dftc_info(datafile)
+    a_ho = 1./math.sqrt(omega_x)
+    
+    velocities = np.memmap(datafile+'.currents',dtype=np.float64)[measure_it*Nx*Ny*Nz*3:(measure_it+1)*Nx*Ny*Nz*3]
+    
+    if show:
+        print(velocities.shape[0]/3,Nx*Ny*Nz)
+    
+    velocities = np.reshape(velocities,[3,Nx,Ny,Nz])
+    
+    if show:
+        print(velocities.shape,Nx,Ny,Nz)
+    
+    vx = velocities[0,:,:,:]
+    vy = velocities[1,:,:,:]
+    vz = velocities[2,:,:,:]
+    
+    if show:
+        print(vy)
+    
+    return vx,vy,vz
