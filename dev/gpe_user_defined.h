@@ -474,6 +474,9 @@ static inline void gpe_print_interactions_type()
 #endif
 
 #if (VEXT == 0) // HARMONIC POTENTIAL
+
+#pragma message ("Compiling for harmonic potential.")
+
 /**
  * Function computes value of external potential V_ext(x,y,z,t)
  * @param ix - x coordinate, ix=0,1,...,d_nx-1, where d_nx is global variable 
@@ -515,6 +518,7 @@ const char* potential_type = "HARMONIC POTENTIAL\n";
 
 
 #elif (VEXT == 1) // WOODS-SAXON TUBE
+#pragma message ("Compiling for periodic tube.")
 
 typedef enum {V0,A,R} potential_params_t;
 

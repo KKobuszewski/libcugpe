@@ -6,7 +6,7 @@
 
 #include "gpe_user_defined.h"
 
-#define MAX_REC_LEN 256		// size of buffer for reading file
+#define MAX_REC_LEN 256        // size of buffer for reading file
 
 
 // TODO: make structure struct gpe_info
@@ -129,18 +129,18 @@ static inline void get_info(    char* info_filename,
 
 
 static inline void gpe_get_info(   char* dftc_filename,
-									int* nx,
-									int* ny,
-									int* nz,
-									double* dt,
-									int* nom,
-									double* scat_lenght,
-									double* aspect_ratio,
-									double* omega_x,
-									double* r0,
-									double* npart,
-									double* total_time = NULL
-							  )
+                                    int* nx,
+                                    int* ny,
+                                    int* nz,
+                                    double* dt,
+                                    int* nom,
+                                    double* scat_lenght,
+                                    double* aspect_ratio,
+                                    double* omega_x,
+                                    double* r0,
+                                    double* npart,
+                                    double* total_time = NULL
+                              )
 {
     
     // Open dftc.info file

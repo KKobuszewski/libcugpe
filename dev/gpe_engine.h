@@ -159,37 +159,37 @@ static inline const char* gpe_get_error_string( gpe_result_t gpe_res)
 {
     if (gpe_res != GPE_SUCCESS) 
     {
-		if (gpe_res > 1000)
-		{
-			// parsing cublas errors
-			gpe_res -= CUBLAS_ERRORS_BASE;
-			// ...
-		}
-		else if (gpe_res > 100)
-		{
-			// parsing cufft errors
-			gpe_res -= CUFFT_ERRORS_BASE;
-			if      (gpe_res == CUFFT_INVALID_PLAN)              { return "CUFFT_INVALID_PLAN";        }
-			else if (gpe_res == CUFFT_ALLOC_FAILED)              { return "CUFFT_ALLOC_FAILED";        }
-			else if (gpe_res == CUFFT_INVALID_TYPE)              { return "CUFFT_INVALID_TYPE";        }
-			else if (gpe_res == CUFFT_INVALID_VALUE)             { return "CUFFT_INVALID_VALUE";       }
-			else if (gpe_res == CUFFT_INTERNAL_ERROR)            { return "CUFFT_INTERNAL_ERROR";      }
-			else if (gpe_res == CUFFT_EXEC_FAILED)               { return "CUFFT_EXEC_FAILED";         }
-			else if (gpe_res == CUFFT_SETUP_FAILED)              { return "CUFFT_SETUP_FAILED";        }
-			else if (gpe_res == CUFFT_INVALID_SIZE)              { return "CUFFT_INVALID_SIZE";        }
-			else if (gpe_res == CUFFT_UNALIGNED_DATA)            { return "CUFFT_UNALIGNED_DATA";      }
-			else if (gpe_res == CUFFT_INCOMPLETE_PARAMETER_LIST) { return "INCOMPLETE_PARAMETER_LIST"; }
-			else if (gpe_res == CUFFT_INVALID_DEVICE)            { return "CUFFT_INVALID_DEVICE";      }
-			else if (gpe_res == CUFFT_NO_WORKSPACE)              { return "CUFFT_NO_WORKSPACE";        }
-			else if (gpe_res == CUFFT_NOT_IMPLEMENTED)           { return "CUFFT_NOT_IMPLEMENTED";     }
-			else if (gpe_res == CUFFT_PARSE_ERROR)               { return "PARSE_ERROR";               }
-			else if (gpe_res == CUFFT_LICENSE_ERROR)             { return "CUFFT_LICENSE_ERROR";       }
-		}
-		else if (gpe_res >= 1)
-		{
-			// parsing cuda errors
-			return cudaGetErrorString((cudaError_t)(gpe_res));
-		}
+        if (gpe_res > 1000)
+        {
+            // parsing cublas errors
+            gpe_res -= CUBLAS_ERRORS_BASE;
+            // ...
+        }
+        else if (gpe_res > 100)
+        {
+            // parsing cufft errors
+            gpe_res -= CUFFT_ERRORS_BASE;
+            if      (gpe_res == CUFFT_INVALID_PLAN)              { return "CUFFT_INVALID_PLAN";        }
+            else if (gpe_res == CUFFT_ALLOC_FAILED)              { return "CUFFT_ALLOC_FAILED";        }
+            else if (gpe_res == CUFFT_INVALID_TYPE)              { return "CUFFT_INVALID_TYPE";        }
+            else if (gpe_res == CUFFT_INVALID_VALUE)             { return "CUFFT_INVALID_VALUE";       }
+            else if (gpe_res == CUFFT_INTERNAL_ERROR)            { return "CUFFT_INTERNAL_ERROR";      }
+            else if (gpe_res == CUFFT_EXEC_FAILED)               { return "CUFFT_EXEC_FAILED";         }
+            else if (gpe_res == CUFFT_SETUP_FAILED)              { return "CUFFT_SETUP_FAILED";        }
+            else if (gpe_res == CUFFT_INVALID_SIZE)              { return "CUFFT_INVALID_SIZE";        }
+            else if (gpe_res == CUFFT_UNALIGNED_DATA)            { return "CUFFT_UNALIGNED_DATA";      }
+            else if (gpe_res == CUFFT_INCOMPLETE_PARAMETER_LIST) { return "INCOMPLETE_PARAMETER_LIST"; }
+            else if (gpe_res == CUFFT_INVALID_DEVICE)            { return "CUFFT_INVALID_DEVICE";      }
+            else if (gpe_res == CUFFT_NO_WORKSPACE)              { return "CUFFT_NO_WORKSPACE";        }
+            else if (gpe_res == CUFFT_NOT_IMPLEMENTED)           { return "CUFFT_NOT_IMPLEMENTED";     }
+            else if (gpe_res == CUFFT_PARSE_ERROR)               { return "PARSE_ERROR";               }
+            else if (gpe_res == CUFFT_LICENSE_ERROR)             { return "CUFFT_LICENSE_ERROR";       }
+        }
+        else if (gpe_res >= 1)
+        {
+            // parsing cuda errors
+            return cudaGetErrorString((cudaError_t)(gpe_res));
+        }
     }
     return "Unknown error!";
 } 
@@ -262,14 +262,14 @@ if ( ( pointer = (type *) malloc( (size) * sizeof( type ) ) ) == NULL )     \
 // Macro checks corectness of execution of gpe interface functions
 #define gpe_exec( cmd, ierr )                                                               \
 {                                                                                           \
-	ierr=cmd;                                                                               \
-	if(ierr)                                                                                \
-	{                                                                                       \
-		fprintf( stderr , "error: cannot execute: %s\t", #cmd) ;                            \
-		fprintf( stderr , "file=`%s`, line=%d\t" ,__FILE__,__LINE__) ;                      \
-		fprintf( stderr , "Error=%d (%s)\nExiting!\n", ierr, gpe_get_error_string(ierr)) ;  \
-		exit(EXIT_FAILURE) ;                                                                \
-	}                                                                                       \
+    ierr=cmd;                                                                               \
+    if(ierr)                                                                                \
+    {                                                                                       \
+        fprintf( stderr , "error: cannot execute: %s\t", #cmd) ;                            \
+        fprintf( stderr , "file=`%s`, line=%d\t" ,__FILE__,__LINE__) ;                      \
+        fprintf( stderr , "Error=%d (%s)\nExiting!\n", ierr, gpe_get_error_string(ierr)) ;  \
+        exit(EXIT_FAILURE) ;                                                                \
+    }                                                                                       \
 }
 
 
