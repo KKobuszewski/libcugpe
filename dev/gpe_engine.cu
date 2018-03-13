@@ -51,6 +51,9 @@ gpe_flags_t gpe_flags;
 #pragma message (__FILE__ ":" xstr(__LINE__) " INTERACTIONS Macro value: " xstr(INTERACTIONS))
 #pragma message (__FILE__ ":" xstr(__LINE__) " Lattice: " xstr(nx) "x" xstr(ny) "x" xstr(nz))
 #pragma message (__FILE__ ":" xstr(__LINE__) " GAMMA Macro value: " xstr(GAMMA))
+#pragma message (__FILE__ ":" xstr(__LINE__) " nx Macro value: " xstr(nx))
+#pragma message (__FILE__ ":" xstr(__LINE__) " ny Macro value: " xstr(ny))
+#pragma message (__FILE__ ":" xstr(__LINE__) " nz Macro value: " xstr(nz))
 
 
 void gpe_print_potential_type()
@@ -106,11 +109,15 @@ __constant__ double d_npart;
 
 // =========================== Lattice ========================================================================
 
+const int __nx = nx;
+const int __ny = ny;
+const int __nz = nz;
+
 void gpe_get_lattice(int *_nx, int *_ny, int *_nz)
 {
-    *_nx = nx;
-    *_ny = ny;
-    *_nz = nz;
+    *_nx = __nx;
+    *_ny = __ny;
+    *_nz = __nz;
 }
 
 /*

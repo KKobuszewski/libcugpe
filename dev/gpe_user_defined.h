@@ -520,7 +520,7 @@ const char* potential_type = "HARMONIC POTENTIAL\n";
 #elif (VEXT == 1) // WOODS-SAXON TUBE
 #pragma message ("Compiling for periodic tube.")
 
-typedef enum {V0,A,R} potential_params_t;
+typedef enum {V_0,A,R} potential_params_t;
 
 /**
  * Function computes value of external potential V_ext(x,y,z,t)
@@ -536,19 +536,19 @@ inline __device__  double gpe_external_potential(const uint ix,const uint iy,con
     // V(x,y,z) = -Vo/(1+exp( (sqrt(x^2+y^2)-R)/a )
     
     // frequencies are passed through d_user_param array
-    const double V_0 = d_user_param[V0];
-    const double a   = d_user_param[A];
-    const double r   = d_user_param[R];
+    const double V0 = d_user_param[V_0];
+    const double a  = d_user_param[A];
+    const double r  = d_user_param[R];
     
     // coordinate with respect to center of the box
     const double _ix = (double)(ix) - 1.0*(NX/2);
     const double _iy = (double)(iy) - 1.0*(NY/2);
-    const double _iz = (double)(iz) - 1.0*(NZ/2);
+    const double _ir =   sqrt(_ix*_ix + _iy*_iy);   //(double)(iz) - 1.0*(NZ/2);
     
     // TODO: use exp or anharmonicity + check HOW GRAVITY CHANGES THE MOTION
     // TODO: maybe passing lambda will be more effective?
     // TODO: maybe this should be done in another array? <- quicker?
-    const double V_trap = V_0*(1.-1./(  1 + exp( (sqrt(_ix*_ix + _iy*_iy) - r)/a )  ));
+    const double V_trap = V0*(1.-1./(  1 + exp( (_ir - r)/a )  ));
     
     return V_trap;
 }

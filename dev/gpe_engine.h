@@ -449,7 +449,7 @@ int gpe_evolve(int nt);
 /**
  * Function evolves state nt steps in time i.e. \f$\Psi(t)\rightarrow\Psi(t+n_t dt)\f$ with option evolution by quantum friction potential.
  * @param nt number of steps to evolve [INPUT]
- * @param chemical_potential chemical potential of a system in ITE [INPUT]
+ * @param chemical_potential chemical potential of a system in ITE [OUTPUT]
  * @return It returns 0 if success otherwise error code is returned.
  * */
 int gpe_evolve_qf(int nt, double* chemical_potential = NULL);
