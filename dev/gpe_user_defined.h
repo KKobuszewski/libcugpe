@@ -144,7 +144,7 @@ inline __device__  double gpe_dEDFdn(double rho, uint it)
  *
  * @return value of F[V_pp]
  */
-inline __device__ double gpe_Vpp_k(double kx, double ky, double kz, uint it)
+inline __device__ double gpe_Vpp_k(double kx, double ky, double kz, uint it = 0)
 {
   return 0; // no long-range term.
 }
